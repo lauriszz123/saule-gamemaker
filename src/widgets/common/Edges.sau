@@ -1,0 +1,88 @@
+from shine import Graphics
+from uikit import *
+
+-- ============================================================================
+-- Edges
+-- ============================================================================
+--
+-- A filled box with a one-pixel line on whichever sides you name. The chrome
+-- is built out of these: the menu bar has a line along its bottom, a panel a
+-- line all round, a sunken field a dark top-left and a light bottom-right.
+--
+--     Edges(fill: Palette.chrome, bottom: Palette.chromeEdge, child: bar)
+
+export class Edges extends SingleChildView
+    fill: Color?
+    top: Color?
+    bottom: Color?
+    left: Color?
+    right: Color?
+
+    fn init(
+        child: View? = nil,
+        fill: Color? = nil,
+        top: Color? = nil,
+        bottom: Color? = nil,
+        left: Color? = nil,
+        right: Color? = nil,
+        key: string? = nil
+    )
+        self.super(child, key)
+
+        self.fill = fill
+        self.top = top
+        self.bottom = bottom
+        self.left = left
+        self.right = right
+    end
+
+    -- The same colour on all four sides.
+    static fn box(child: View, line: Color, fill: Color? = nil) -> Edges
+        return Edges(child, fill, line, line, line, line)
+    end
+
+    -- A filled box hides what is behind it, from the pointer as well as the
+    -- eye: hovering over it never lights up a control underneath.
+    fn occludes(el: Element) -> boolean
+        local fill = self.fill
+
+        return fill != nil and fill!.a >= 0.99
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+
+        local fill = self.fill
+        if fill != nil then
+            fill.apply()
+            Graphics.rectangle("fill", x, y, w, h)
+        end
+
+        el.paintChildren(x, y)
+
+        local top = self.top
+        if top != nil then
+            top.apply()
+            Graphics.rectangle("fill", x, y, w, 1.0)
+        end
+
+        local bottom = self.bottom
+        if bottom != nil then
+            bottom.apply()
+            Graphics.rectangle("fill", x, y + h - 1.0, w, 1.0)
+        end
+
+        local left = self.left
+        if left != nil then
+            left.apply()
+            Graphics.rectangle("fill", x, y, 1.0, h)
+        end
+
+        local right = self.right
+        if right != nil then
+            right.apply()
+            Graphics.rectangle("fill", x + w - 1.0, y, 1.0, h)
+        end
+    end
+end

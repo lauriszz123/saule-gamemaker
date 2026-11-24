@@ -1,0 +1,206 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from views.shell.CommandEntry import *
+
+-- ============================================================================
+-- ResourceTreePanel
+-- ============================================================================
+--
+-- The resource tree down the left of the main window: a folder per kind with
+-- that kind's resources inside, then the game-wide items at the bottom.
+--
+-- The tree is rebuilt from the project on every change. Selection and which
+-- folders are open live on the `Editor`, so they survive the rebuild — and so
+-- creating a sprite can open the Sprites folder and select the new one.
+
+export class ResourceTreePanel extends View
+    editor: Editor
+    commands: Commands
+
+    fn init(editor: Editor, commands: Commands, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.commands = commands
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+
+        local tree = TreeView(
+            roots: self.buildNodes(),
+            expanded: editor.expanded,
+            selectedId: editor.selectedNode,
+            onToggle: fn(node: TreeNode)
+                editor.toggleExpanded(node.id)
+            end,
+            onSelect: fn(node: TreeNode)
+                editor.select(node.id, node.tag)
+            end,
+            onActivate: fn(node: TreeNode)
+                self.activate(node)
+            end,
+            onContextMenu: fn(node: TreeNode, x: float, y: float)
+                local entries = self.contextEntries(node)
+
+                if #entries > 0 then
+                    openMenuPopup(context, x, y, entries, Metrics.menuWidth)
+                end
+            end
+        )
+
+        return Edges(right: Palette.chromeEdge, child: tree)
+    end
+
+    -- --- Building the tree ----------------------------------------------------------
+
+    local fn buildNodes() -> TreeNode[]
+        local project = self.editor.project
+        local roots: TreeNode[] = {}
+
+        for kind in ResourceKinds.all() do
+            local group = project.root(kind)
+            local folder = TreeNode(
+                id: NodeIds.folder(kind),
+                label: group.name,
+                glyph: Glyphs.folder,
+                glyphColor: Palette.folder,
+                isFolder: true,
+                openGlyph: Glyphs.folderOpen
+            )
+
+            self.fill(folder, group)
+            roots[#roots + 1] = folder
+        end
+
+        roots[#roots + 1] = TreeNode(
+            NodeIds.gameInformation,
+            "Game Information",
+            Glyphs.gameInfo,
+            Palette.info
+        )
+        roots[#roots + 1] = TreeNode(
+            NodeIds.gameSettings,
+            "Global Game Settings",
+            Glyphs.gameSettings,
+            Palette.textMuted
+        )
+        roots[#roots + 1] = TreeNode(
+            NodeIds.extensions,
+            "Extension Packages",
+            Glyphs.extensions,
+            Palette.textMuted
+        )
+
+        return roots
+    end
+
+    -- Subgroups first, then the resources, the way a file browser lists
+    -- folders before files.
+    local fn fill(node: TreeNode, group: ResourceGroup) -> nil
+        for sub in group.groups do
+            local child = node.add(
+                TreeNode(
+                    id: node.id .. "/" .. sub.name,
+                    label: sub.name,
+                    glyph: Glyphs.folder,
+                    glyphColor: Palette.folder,
+                    isFolder: true,
+                    openGlyph: Glyphs.folderOpen
+                )
+            )
+
+            self.fill(child, sub)
+        end
+
+        for resource in group.resources do
+            node.add(
+                TreeNode(
+                    id: NodeIds.resource(resource.id),
+                    label: resource.name,
+                    glyph: ResourceStyle.glyph(resource.kind),
+                    glyphColor: ResourceStyle.accent(resource.kind),
+                    tag: resource.id
+                )
+            )
+        end
+    end
+
+    -- --- Behaviour --------------------------------------------------------------------
+
+    -- Double-click: open whatever the item stands for.
+    local fn activate(node: TreeNode) -> nil
+        if node.tag != 0 then
+            self.editor.openResource(node.tag)
+        elseif node.id == NodeIds.gameInformation then
+            self.editor.openGameInformation()
+        elseif node.id == NodeIds.gameSettings then
+            self.editor.openGameSettings()
+        end
+    end
+
+    -- Right-click: what can be done to this item.
+    local fn contextEntries(node: TreeNode) -> MenuEntry[]
+        local c = self.commands
+        local kind = self.kindOf(node)
+
+        if node.tag != 0 and kind != nil then
+            return {
+                commandEntry(c.properties),
+                commandEntry(c.rename),
+                commandEntry(c.duplicate),
+                commandEntry(c.delete),
+                MenuEntry.separator(),
+                commandEntry(
+                    c.create(kind!),
+                    ResourceStyle.glyph(kind!),
+                    ResourceStyle.accent(kind!)
+                ),
+            }
+        end
+
+        if kind != nil then
+            return {
+                commandEntry(
+                    c.create(kind!),
+                    ResourceStyle.glyph(kind!),
+                    ResourceStyle.accent(kind!)
+                ),
+                commandEntry(c.createGroup, Glyphs.folder, Palette.folder),
+                MenuEntry.separator(),
+                commandEntry(c.expandAll),
+                commandEntry(c.collapseAll),
+            }
+        end
+
+        if node.id == NodeIds.gameInformation then
+            return {commandEntry(c.gameInformation, Glyphs.gameInfo, Palette.info)}
+        end
+
+        if node.id == NodeIds.gameSettings then
+            return {commandEntry(c.gameSettings, Glyphs.gameSettings)}
+        end
+
+        return {}
+    end
+
+    -- Which kind a folder or resource node belongs to.
+    local fn kindOf(node: TreeNode) -> ResourceKind?
+        if node.tag != 0 then
+            return self.editor.project.find(node.tag)?.kind
+        end
+
+        for kind in ResourceKinds.all() do
+            local prefix = NodeIds.folder(kind)
+
+            if String.sub(node.id, 1, String.len(prefix)) == prefix then
+                return kind
+            end
+        end
+
+        return nil
+    end
+end

@@ -1,0 +1,58 @@
+from uikit import Color
+
+-- ============================================================================
+-- TreeNode
+-- ============================================================================
+--
+-- One item in a `TreeView`: what it says, which glyph it shows, and what is
+-- under it. Nodes are plain data, rebuilt from the model whenever it changes;
+-- the `id` is what ties a node to the thing it stands for and keeps
+-- selection and expansion stable across rebuilds.
+
+export class TreeNode
+    id: string
+    label: string
+    glyph: integer
+    glyphColor: Color?
+
+    -- A folder always gets an expander, even while empty, and swaps to
+    -- `openGlyph` while expanded.
+    isFolder: boolean
+    openGlyph: integer?
+
+    -- Free for the owner's use — the resource tree keeps a resource id here,
+    -- so a selected node leads straight back to its resource.
+    tag: integer
+
+    children: TreeNode[]
+
+    fn init(
+        id: string,
+        label: string,
+        glyph: integer = 0,
+        glyphColor: Color? = nil,
+        isFolder: boolean = false,
+        openGlyph: integer? = nil,
+        tag: integer = 0
+    )
+        self.id = id
+        self.label = label
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.isFolder = isFolder
+        self.openGlyph = openGlyph
+        self.tag = tag
+        self.children = {}
+    end
+
+    -- Append a child and return it, so a tree can be built in one pass.
+    fn add(child: TreeNode) -> TreeNode
+        self.children[#self.children + 1] = child
+
+        return child
+    end
+
+    fn canExpand() -> boolean
+        return self.isFolder or #self.children > 0
+    end
+end

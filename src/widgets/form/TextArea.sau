@@ -1,0 +1,49 @@
+from uikit import *
+from theme import Palette, Metrics
+
+-- ============================================================================
+-- TextArea
+-- ============================================================================
+--
+-- A multi-line text box in the editor's look — the script editor and the
+-- game information page. Wraps uikit's `TextEditor` the way `Field` wraps
+-- `TextField`. Give it a bounded height (`.expanded()` in a column).
+
+export class TextArea extends View
+    value: string
+    placeholder: string
+    softWrap: boolean
+    onChanged: (fn(string) -> nil)?
+
+    fn init(
+        value: string = "",
+        placeholder: string = "",
+        softWrap: boolean = true,
+        key: string? = nil,
+        onChanged: (fn(string) -> nil)? = nil
+    )
+        self.super(key)
+
+        self.value = value
+        self.placeholder = placeholder
+        self.softWrap = softWrap
+        self.onChanged = onChanged
+    end
+
+    fn body(context: BuildContext) -> View
+        return TextEditor(
+            value: self.value,
+            placeholder: self.placeholder,
+            onChanged: self.onChanged,
+            style: TextStyle(color: Palette.text, size: Metrics.fontSize),
+            placeholderStyle: TextStyle(color: Palette.textDisabled, size: Metrics.fontSize),
+            background: Palette.field,
+            border: Palette.fieldBorder,
+            focusBorder: Palette.selection,
+            selectionColor: Palette.selection.withAlpha(0.30),
+            padding: EdgeInsets.all(6.0),
+            radius: 2.0,
+            softWrap: self.softWrap
+        )
+    end
+end

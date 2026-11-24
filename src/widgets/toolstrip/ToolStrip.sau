@@ -1,0 +1,50 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+
+-- ============================================================================
+-- ToolStrip
+-- ============================================================================
+--
+-- The row of tool buttons under the menu bar. Its children are written as a
+-- block, the same way a stack's are:
+--
+--     ToolStrip() do
+--         ToolButton(glyph: Glyphs.newGame, tooltip: "New") do … end
+--         ToolSeparator()
+--         ToolButton(…)
+--     end
+
+export class ToolStrip extends View
+    children: View[]
+
+    fn init(children: View[] = {}, key: string? = nil, content: (fn() -> nil)? = nil)
+        self.super(key)
+
+        self.children = childrenOf(children, content)
+    end
+
+    fn body(context: BuildContext) -> View
+        local row = HStack(alignment: StackAlignment.Center, spacing: 1.0, children: self.children)
+
+        return Edges(
+            fill: Palette.chrome,
+            top: Palette.bevelLight,
+            bottom: Palette.chromeEdge,
+            child: row.padding(insets: EdgeInsets.symmetric(horizontal: 6.0))
+        ).frame(height: Metrics.toolStripHeight)
+    end
+end
+
+-- The grooved upright line between groups of tool buttons.
+export class ToolSeparator extends View
+    fn init(key: string? = nil)
+        self.super(key)
+    end
+
+    fn body(context: BuildContext) -> View
+        return Rule(vertical: true, etched: true).frame(height: Metrics.toolButtonSize - 6.0).padding(
+            insets: EdgeInsets.symmetric(horizontal: 5.0)
+        )
+    end
+end

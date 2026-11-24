@@ -1,0 +1,56 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+
+-- ============================================================================
+-- ListBox
+-- ============================================================================
+--
+-- A titled, bordered, scrolling list of one-line items — an object's events,
+-- its actions, a room's instances. When there is nothing in it, it says so
+-- in grey in the middle instead of being an empty white box.
+--
+--     ListBox(title: "Events:", items: names, emptyText: "No events yet")
+
+export class ListBox extends View
+    title: string
+    items: string[]
+    emptyText: string
+
+    fn init(title: string = "", items: string[] = {}, emptyText: string = "", key: string? = nil)
+        self.super(key)
+
+        self.title = title
+        self.items = items
+        self.emptyText = emptyText
+    end
+
+    fn body(context: BuildContext) -> View
+        local inner: View = Label(self.emptyText, color: Palette.textDisabled).centered()
+
+        if #self.items > 0 then
+            local rows: View[] = {}
+
+            for item in self.items do
+                rows[#rows + 1] = Label(item).padding(
+                    insets: EdgeInsets.symmetric(horizontal: 6.0, vertical: 3.0)
+                )
+            end
+
+            inner = ScrollView(
+                child: VStack(alignment: StackAlignment.Fill, sizing: StackSize.Fit, children: rows)
+            )
+        end
+
+        local box = Edges.box(inner, Palette.fieldBorder, Palette.field)
+
+        if self.title == "" then
+            return box
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 4.0) do
+            Label(self.title)
+            box.expanded()
+        end
+    end
+end

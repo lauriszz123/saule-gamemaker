@@ -1,0 +1,137 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+from widgets.preview.Checkerboard import *
+from Argb import *
+
+-- ============================================================================
+-- Swatch
+-- ============================================================================
+--
+-- One colour in a palette: a small square of it, over a checkerboard so a
+-- see-through colour shows as one. Left-clicking picks it as the left colour,
+-- right-clicking as the right.
+
+export class Swatch extends View
+    argb: integer
+    size: float
+    onLeft: fn(integer) -> nil
+    onRight: fn(integer) -> nil
+
+    fn init(
+        argb: integer,
+        size: float = 18.0,
+        onLeft: fn(integer) -> nil = (c: integer) => nil,
+        onRight: fn(integer) -> nil = (c: integer) => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.argb = argb
+        self.size = size
+        self.onLeft = onLeft
+        self.onRight = onRight
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.constrain(Size(self.size, self.size))
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        Swatch.paintColor(self.argb, x, y, el.size.width, el.size.height)
+
+        Palette.bevelShadow.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + 0.5, y + 0.5, el.size.width - 1.0, el.size.height - 1.0)
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        if event.kind != PointerKind.Down or not inside then
+            return false
+        end
+
+        if event.button == 2 then
+            self.onRight(self.argb)
+        else
+            self.onLeft(self.argb)
+        end
+
+        return true
+    end
+
+    -- A colour filling a rectangle, over a checkerboard when it isn't opaque.
+    static fn paintColor(argb: integer, x: float, y: float, w: float, h: float) -> nil
+        if Argb.alpha(argb) < 0xFF then
+            Checkerboard.fill(x, y, w, h, 4.0)
+        end
+
+        Argb.color(argb).apply()
+        Graphics.rectangle("fill", x, y, w, h)
+    end
+end
+
+-- The two colours in hand, the way a paint program shows them: the left
+-- colour as a square in front, the right one behind it, down and to the
+-- right. Clicking a square asks for a new colour for that slot.
+export class ColorPair extends View
+    left: integer
+    right: integer
+    onLeft: fn() -> nil
+    onRight: fn() -> nil
+
+    static local side: float = 34.0
+
+    fn init(
+        left: integer,
+        right: integer,
+        onLeft: fn() -> nil = () => nil,
+        onRight: fn() -> nil = () => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.left = left
+        self.right = right
+        self.onLeft = onLeft
+        self.onRight = onRight
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.constrain(Size(64.0, 52.0))
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        self.square(self.right, x + 26.0, y + 16.0)
+        self.square(self.left, x + 2.0, y + 2.0)
+    end
+
+    local fn square(argb: integer, x: float, y: float) -> nil
+        Palette.bevelLight.apply()
+        Graphics.rectangle("fill", x - 2.0, y - 2.0, side + 4.0, side + 4.0)
+        Swatch.paintColor(argb, x, y, side, side)
+        Palette.windowFrame.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x - 1.5, y - 1.5, side + 3.0, side + 3.0)
+    end
+
+    -- The front (left) square wins where the two overlap, as it is drawn.
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        if event.kind != PointerKind.Down or not inside then
+            return false
+        end
+
+        if x >= 0.0 and x < side + 4.0 and y >= 0.0 and y < side + 4.0 then
+            self.onLeft()
+
+            return true
+        end
+
+        if x >= 24.0 and y >= 14.0 then
+            self.onRight()
+
+            return true
+        end
+
+        return false
+    end
+end

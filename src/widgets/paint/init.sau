@@ -1,0 +1,10 @@
+-- widgets/paint — the pieces of a pixel editor: the canvas, colour swatches,
+-- the readout under it, and the colour picker dialog.
+
+export from Argb import *
+export from Hsv import *
+export from PixelCanvas import *
+export from Swatch import *
+export from PixelReadout import *
+export from ColorFields import *
+export from ColorPicker import *

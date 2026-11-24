@@ -1,0 +1,85 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from widgets.form import *
+from DialogFrame import *
+
+-- ============================================================================
+-- openTextDialog
+-- ============================================================================
+--
+-- Show a block of text in a modal window with a Close button — read-only,
+-- scrolling, for reports like an object's "Show Information".
+--
+--     openTextDialog(context, title: "Object Information", text: report)
+
+export fn openTextDialog(
+    context: BuildContext,
+    title: string,
+    text: string,
+    glyph: integer = Glyphs.gameInfo,
+    width: float = 560.0,
+    height: float = 440.0
+) -> OverlayHandle?
+    local owner = context.owner()
+
+    if owner == nil then
+        return nil
+    end
+
+    local overlay = owner!.overlay()
+    local entry = OverlayEntry() do
+        return Frame()
+    end
+
+    local handle = OverlayHandle(overlay, entry)
+
+    entry.builder = fn()
+        local close = fn()
+            handle.close()
+        end
+
+        local body = VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            Edges.box(
+                ScrollView(
+                    child: Text(text, style: TextStyle(color: Palette.text, size: Metrics.fontSize)).padding(
+                        8.0
+                    )
+                ),
+                Palette.fieldBorder,
+                Palette.field
+            ).expanded()
+
+            HStack(distribution: Distribution.End) do
+                PushButton(label: "Close", width: 90.0, action: close)
+            end.frame(height: 26.0)
+        end
+
+        local dialog = Focus(
+            modal: true,
+            autofocus: true,
+            tabStop: false,
+            onKeyDown: fn(event: KeyEvent)
+                if event.key == "escape" or event.key == "return" then
+                    close()
+
+                    return true
+                end
+
+                return false
+            end,
+            child: DialogFrame(title: title, glyph: glyph, onClose: close) do
+                body.padding(10.0)
+            end
+        )
+
+        return ModalBarrier(
+            color: Color.rgba(0, 0, 0, 0.18),
+            child: Center(child: dialog.frame(width: width, height: height))
+        )
+    end
+
+    overlay.insert(entry)
+
+    return handle
+end

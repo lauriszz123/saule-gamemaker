@@ -1,0 +1,155 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+from widgets.menu import *
+
+-- ============================================================================
+-- Dropdown
+-- ============================================================================
+--
+-- A box showing one choice out of a list; clicking it opens the list as a
+-- menu underneath. Choices are referred to by position, so the caller can
+-- keep whatever they stand for (resource ids, enum values) in a list of its
+-- own beside the labels.
+--
+--     Dropdown(items: names, selected: 2) do (index: integer)
+--         editor.setObjectSprite(id, ids[index])
+--     end
+--
+-- `selected` is 0 when nothing is chosen, and the placeholder shows.
+
+export class DropdownItem
+    label: string
+    glyph: integer?
+    glyphColor: Color?
+    enabled: boolean
+
+    fn init(label: string, glyph: integer? = nil, glyphColor: Color? = nil, enabled: boolean = true)
+        self.label = label
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.enabled = enabled
+    end
+end
+
+export class Dropdown extends View
+    items: DropdownItem[]
+    selected: integer
+    placeholder: string
+    onChanged: (fn(integer) -> nil)?
+
+    fn init(
+        items: DropdownItem[] = {},
+        selected: integer = 0,
+        placeholder: string = "",
+        key: string? = nil,
+        onChanged: (fn(integer) -> nil)? = nil
+    )
+        self.super(key)
+
+        self.items = items
+        self.selected = selected
+        self.placeholder = placeholder
+        self.onChanged = onChanged
+    end
+
+    fn body(context: BuildContext) -> View
+        local data = context.data()
+        local enabled = self.onChanged != nil and #self.items > 0
+        local current: DropdownItem? = nil
+
+        if self.selected >= 1 and self.selected <= #self.items then
+            current = self.items[self.selected]
+        end
+
+        local label = self.placeholder
+        local ink = Palette.textMuted
+        local glyph: integer? = nil
+        local tint = Palette.textMuted
+
+        if current != nil then
+            label = current!.label
+            ink = Palette.text
+            glyph = current!.glyph
+            tint = current!.glyphColor ?? Palette.text
+        end
+
+        if not enabled then
+            ink = Palette.textDisabled
+            tint = Palette.textDisabled
+        end
+
+        local edge = Palette.fieldBorder
+        if enabled and (data.hovered or data.scratch.open == true) then
+            edge = Palette.selection
+        end
+
+        local face = Surface(
+            color: Palette.field,
+            border: edge,
+            radius: 2.0,
+            child: HStack(alignment: StackAlignment.Center, sizing: StackSize.Fill, spacing: 5.0) do
+                if glyph != nil then
+                    Icon(glyph!, Metrics.iconSize, tint)
+                end
+
+                Label(label, color: ink).clipped().expanded()
+                Icon(Icons.expandMore, 18.0, Palette.textMuted)
+            end.padding(insets: EdgeInsets.only(left: 6.0, right: 3.0))
+        ).frame(height: 24.0)
+
+        if not enabled then
+            return face
+        end
+
+        return GestureArea(child: face, onHover: fn(inside: boolean)
+            data.hovered = inside
+            context.markNeedsBuild()
+        end, onTap: fn()
+            self.open(context)
+        end)
+    end
+
+    local fn open(context: BuildContext) -> nil
+        local changed = self.onChanged
+
+        if changed == nil then
+            return
+        end
+
+        local entries: MenuEntry[] = {}
+
+        for i = 1, #self.items do
+            local item = self.items[i]
+            local index = i
+
+            entries[#entries + 1] = MenuEntry(
+                item.label,
+                glyph: item.glyph,
+                glyphColor: item.glyphColor,
+                enabled: item.enabled,
+                checked: i == self.selected,
+                action: () => changed!(index)
+            )
+        end
+
+        local size = context.size()
+        local origin = absoluteOf(context.element())
+        local data = context.data()
+
+        data.scratch.open = true
+        context.markNeedsBuild()
+
+        openMenuPopup(
+            context,
+            origin.dx,
+            origin.dy + size.height + 1.0,
+            entries,
+            width: Math.max(size.width, 160.0),
+            onDismiss: fn()
+                data.scratch.open = false
+                context.markNeedsBuild()
+            end
+        )
+    end
+end

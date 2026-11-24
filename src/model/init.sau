@@ -1,0 +1,16 @@
+-- model — the game's data model.
+--
+-- What a game *is*: its resources and how they are filed. No UI, no editor
+-- state; everything above this layer depends on it, and it depends on nothing.
+
+export from Signal import *
+export from ResourceKind import *
+export from SpriteFrame import *
+export from SpriteData import *
+export from EventKind import *
+export from EventCatalog import *
+export from ObjectEvent import *
+export from ObjectData import *
+export from Resource import *
+export from ResourceGroup import *
+export from GameProject import *

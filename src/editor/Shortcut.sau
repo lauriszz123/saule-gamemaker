@@ -1,0 +1,61 @@
+-- ============================================================================
+-- Shortcut
+-- ============================================================================
+--
+-- A key combination that runs a command: `Shortcut("s", ctrl: true)` is
+-- Ctrl+S. It knows how to describe itself for a menu ("Ctrl+S") and whether
+-- a key press matches it — and nothing about the UI the press came from.
+
+export class Shortcut
+    key: string
+    ctrl: boolean
+    shift: boolean
+    alt: boolean
+
+    fn init(key: string, ctrl: boolean = false, shift: boolean = false, alt: boolean = false)
+        self.key = key
+        self.ctrl = ctrl
+        self.shift = shift
+        self.alt = alt
+    end
+
+    fn matches(key: string, ctrl: boolean, shift: boolean, alt: boolean) -> boolean
+        return self.key == key and self.ctrl == ctrl and self.shift == shift and self.alt == alt
+    end
+
+    -- "Ctrl+Shift+S", "F5", "Del"
+    fn label() -> string
+        local text = ""
+
+        if self.ctrl then
+            text = text .. "Ctrl+"
+        end
+
+        if self.shift then
+            text = text .. "Shift+"
+        end
+
+        if self.alt then
+            text = text .. "Alt+"
+        end
+
+        return text .. Shortcut.keyName(self.key)
+    end
+
+    -- How an engine key name reads in a menu.
+    static fn keyName(key: string) -> string
+        if key == "delete" then
+            return "Del"
+        end
+
+        if key == "return" then
+            return "Enter"
+        end
+
+        if key == "escape" then
+            return "Esc"
+        end
+
+        return String.upper(key)
+    end
+end

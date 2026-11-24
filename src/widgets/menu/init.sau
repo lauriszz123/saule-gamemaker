@@ -1,0 +1,7 @@
+-- widgets/menu — the menu bar, its drop-downs, and right-click menus.
+
+export from MenuEntry import *
+export from Menu import *
+export from MenuPanel import *
+export from MenuPopup import *
+export from MenuBar import *

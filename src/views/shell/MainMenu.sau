@@ -1,0 +1,177 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from CommandEntry import *
+
+-- ============================================================================
+-- MainMenu
+-- ============================================================================
+--
+-- The menu bar of the main window: File, Edit, Resources, Scripts, Run,
+-- Window, Help. Each menu is a list of commands, so this file is only the
+-- *arrangement* — what each entry does lives in `editor/Commands.sau`.
+
+export class MainMenu extends View
+    editor: Editor
+    commands: Commands
+
+    fn init(editor: Editor, commands: Commands, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.commands = commands
+    end
+
+    fn body(context: BuildContext) -> View
+        return MenuBar(
+            menus: {
+                self.fileMenu(),
+                self.editMenu(),
+                self.resourcesMenu(),
+                self.scriptsMenu(),
+                self.runMenu(),
+                self.windowMenu(),
+                self.helpMenu(),
+            }
+        )
+    end
+
+    local fn fileMenu() -> Menu
+        local c = self.commands
+
+        return Menu(
+            "File",
+            {
+                commandEntry(c.newGame, Glyphs.newGame),
+                commandEntry(c.openGame, Glyphs.openGame),
+                commandEntry(c.saveGame, Glyphs.saveGame),
+                commandEntry(c.saveGameAs),
+                MenuEntry.separator(),
+                commandEntry(c.createExecutable, Glyphs.createExecutable),
+                commandEntry(c.publishGame, Glyphs.publish),
+                MenuEntry.separator(),
+                commandEntry(c.importResources),
+                commandEntry(c.exportResources),
+                MenuEntry.separator(),
+                commandEntry(c.preferences),
+                MenuEntry.separator(),
+                commandEntry(c.exit),
+            }
+        )
+    end
+
+    local fn editMenu() -> Menu
+        local c = self.commands
+
+        return Menu(
+            "Edit",
+            {
+                commandEntry(c.createGroup, Glyphs.folder, Palette.folder),
+                MenuEntry.separator(),
+                commandEntry(c.rename),
+                commandEntry(c.properties),
+                commandEntry(c.duplicate),
+                commandEntry(c.delete),
+                MenuEntry.separator(),
+                commandEntry(c.expandAll),
+                commandEntry(c.collapseAll),
+            }
+        )
+    end
+
+    local fn resourcesMenu() -> Menu
+        local c = self.commands
+        local entries: MenuEntry[] = {}
+
+        for kind in ResourceKinds.all() do
+            entries[#entries + 1] = commandEntry(
+                c.create(kind),
+                ResourceStyle.glyph(kind),
+                ResourceStyle.accent(kind)
+            )
+        end
+
+        entries[#entries + 1] = MenuEntry.separator()
+        entries[#entries + 1] = commandEntry(c.gameInformation, Glyphs.gameInfo, Palette.info)
+        entries[#entries + 1] = commandEntry(c.gameSettings, Glyphs.gameSettings)
+        entries[#entries + 1] = commandEntry(c.extensionPackages, Glyphs.extensions)
+        entries[#entries + 1] = MenuEntry.separator()
+        entries[#entries + 1] = commandEntry(c.defineConstants)
+        entries[#entries + 1] = commandEntry(c.includedFiles)
+
+        return Menu("Resources", entries)
+    end
+
+    local fn scriptsMenu() -> Menu
+        local c = self.commands
+
+        return Menu(
+            "Scripts",
+            {
+                commandEntry(c.importScripts),
+                commandEntry(c.exportScripts),
+                MenuEntry.separator(),
+                commandEntry(c.builtinVariables),
+                commandEntry(c.builtinFunctions),
+                MenuEntry.separator(),
+                commandEntry(c.searchInScripts),
+                commandEntry(c.checkScripts),
+            }
+        )
+    end
+
+    local fn runMenu() -> Menu
+        local c = self.commands
+
+        return Menu(
+            "Run",
+            {
+                commandEntry(c.runNormally, Glyphs.run, Palette.run),
+                commandEntry(c.runDebug, Glyphs.debug, Palette.debug),
+            }
+        )
+    end
+
+    local fn windowMenu() -> Menu
+        local c = self.commands
+        local entries: MenuEntry[] = {
+            commandEntry(c.cascade),
+            commandEntry(c.closeAll),
+        }
+
+        -- Then one entry per open window, ticked for the one in front.
+        local workspace = self.editor.workspace
+        local active = workspace.active()
+
+        if workspace.count() > 0 then
+            entries[#entries + 1] = MenuEntry.separator()
+        end
+
+        for document in workspace.documents do
+            local id = document.id
+
+            entries[#entries + 1] = MenuEntry(
+                label: self.editor.titleOf(document),
+                checked: active != nil and active!.id == id,
+                action: () => workspace.focus(id)
+            )
+        end
+
+        return Menu("Window", entries)
+    end
+
+    local fn helpMenu() -> Menu
+        local c = self.commands
+
+        return Menu(
+            "Help",
+            {
+                commandEntry(c.contents, Glyphs.help, Palette.info),
+                MenuEntry.separator(),
+                commandEntry(c.about),
+            }
+        )
+    end
+end

@@ -1,0 +1,32 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from ResourceEditor import *
+
+-- ============================================================================
+-- ScriptEditor
+-- ============================================================================
+--
+-- A script is all code, so this one drops the side column: the name and OK
+-- sit in a strip along the top and the code fills the rest.
+
+export class ScriptEditor extends ResourceEditor
+    fn init(editor: Editor, resource: Resource, documentId: integer, key: string? = nil)
+        self.super(editor, resource, documentId, key)
+    end
+
+    fn body(context: BuildContext) -> View
+        local strip = HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+            self.nameRow().frame(width: 260.0)
+            Spacer()
+            self.okButton().frame(width: 80.0)
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            show(strip)
+            TextArea(placeholder: "-- Saule code for " .. self.resource.name, softWrap: false).expanded()
+        end.padding(8.0)
+    end
+end

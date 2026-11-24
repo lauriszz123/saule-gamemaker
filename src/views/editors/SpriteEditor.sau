@@ -1,0 +1,219 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from ResourceEditor import *
+from SpriteRegions import *
+
+-- ============================================================================
+-- SpriteEditor
+-- ============================================================================
+--
+-- Sprite Properties.
+--
+--   ┌────────────────────────────┬────────────────────────────────┐
+--   │ Name: [sprite0         ]   │                                │
+--   │ [ Load Sprite ]            │        ░░▓▓░░                  │
+--   │ [ Edit Sprite ]            │        ▓▓██▓▓   ← preview,     │
+--   │ Width 16   Height 16       │        ░░▓▓░░     origin cross │
+--   │ Subimages 8                │                                │
+--   │ Show  [<] 3 / 8 [>]  [▶]   │                                │
+--   │ Origin X [8] Y [8] [Center]│  click the image to set origin │
+--   │ Collision ☑ Precise …      │                                │
+--   │ [          OK          ]   │                                │
+--   └────────────────────────────┴────────────────────────────────┘
+--
+-- Which subimage is showing and whether it is playing belong to this window,
+-- not to the game, so they live in the view's own state.
+
+export class SpriteEditor extends ResourceEditor
+    fn init(editor: Editor, resource: Resource, documentId: integer, key: string? = nil)
+        self.super(editor, resource, documentId, key)
+    end
+
+    fn sidebarWidth() -> float
+        return 250.0
+    end
+
+    fn properties(context: BuildContext) -> View[]
+        local editor = self.editor
+        local id = self.resource.id
+        local sprite = editor.sprite(id) ?? SpriteData()
+        local count = sprite.count()
+
+        local shown = context.state("frame", 1)
+        local playing = context.state("playing", false)
+        local index = Math.clamp(shown.int(1), 1, Math.max(count, 1))
+
+        local load = fn()
+            openFileDialog(
+                context,
+                title: "Load Sprite",
+                folder: editor.imageFolder,
+                extensions: {".png"},
+                onOpen: fn(path: string)
+                    editor.loadSprite(id, path)
+                    shown.set(1)
+                end
+            )
+        end
+
+        -- Stepping wraps round, the way the subimages of an animation do.
+        local step = fn(delta: integer) -> nil
+            if count > 0 then
+                shown.set((index - 1 + delta + count) % count + 1)
+                playing.set(false)
+            end
+        end
+
+        local playGlyph = Icons.playArrow
+        if playing.flag() then
+            playGlyph = Icons.pause
+        end
+
+        local navigator = HStack(alignment: StackAlignment.Center, spacing: 4.0) do
+            Label("Show:").frame(width: 48.0)
+            PushButton(
+                glyph: Icons.chevronLeft,
+                width: 30.0,
+                action: self.onlyIf(count > 1, () => step(-1))
+            )
+            Label(self.counter(index, count)).centered().expanded()
+            PushButton(
+                glyph: Icons.chevronRight,
+                width: 30.0,
+                action: self.onlyIf(count > 1, () => step(1))
+            )
+            PushButton(
+                glyph: playGlyph,
+                glyphColor: Palette.run,
+                width: 30.0,
+                action: self.onlyIf(count > 1, () => playing.set(not playing.flag()))
+            )
+        end
+
+        local origin = HStack(alignment: StackAlignment.Center, spacing: 4.0) do
+            Label("X:")
+            NumberField(value: sprite.originX) do (x: integer)
+                editor.setSpriteOrigin(id, x, sprite.originY)
+            end.expanded()
+            Label("Y:")
+            NumberField(value: sprite.originY) do (y: integer)
+                editor.setSpriteOrigin(id, sprite.originX, y)
+            end.expanded()
+            PushButton(
+                label: "Center",
+                action: self.onlyIf(count > 0, () => editor.centerSpriteOrigin(id))
+            )
+        end
+
+        return {
+            PushButton(
+                label: "Load Sprite",
+                glyph: Glyphs.openGame,
+                glyphColor: Palette.folder,
+                action: load
+            ),
+            PushButton(
+                label: "Edit Sprite",
+                glyph: Glyphs.sprite,
+                glyphColor: ResourceStyle.accent(ResourceKind.Sprite),
+                action: () => editor.openSpriteFrames(id)
+            ),
+            Rule(etched: true),
+            HStack(spacing: 16.0) do
+                self.fact("Width: " .. sprite.width())
+                self.fact("Height: " .. sprite.height())
+            end.frame(height: 18.0),
+            self.fact("Number of subimages: " .. count),
+            navigator,
+            Rule(etched: true),
+            self.heading("Origin"),
+            origin,
+            Rule(etched: true),
+            self.heading("Collision Checking"),
+            Checkbox(
+                value: sprite.preciseCollision,
+                label: "Precise collision checking",
+                onChanged: fn(on: boolean)
+                    editor.setSpriteCollision(id, on, sprite.separateMasks)
+                end
+            ),
+            Checkbox(
+                value: sprite.separateMasks,
+                label: "Separate collision masks",
+                onChanged: fn(on: boolean)
+                    editor.setSpriteCollision(id, sprite.preciseCollision, on)
+                end
+            ),
+        }
+    end
+
+    fn workArea(context: BuildContext) -> View?
+        local editor = self.editor
+        local id = self.resource.id
+        local sprite = editor.sprite(id) ?? SpriteData()
+
+        if sprite.count() == 0 then
+            return Edges.box(self.emptyPrompt(), Palette.fieldBorder, Palette.chromeDark)
+        end
+
+        local preview = SpritePreview(
+            frames: regionsOf(sprite),
+            index: Math.clamp(context.state("frame", 1).int(1), 1, sprite.count()),
+            playing: context.state("playing", false).flag(),
+            originX: sprite.originX,
+            originY: sprite.originY,
+            onPick: fn(x: integer, y: integer)
+                editor.setSpriteOrigin(id, x, y)
+            end
+        ).cursor("crosshair")
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 4.0) do
+            Edges.box(preview, Palette.fieldBorder).expanded()
+            Label(
+                "Click or drag on the image to place the origin.",
+                color: Palette.textMuted,
+                size: Metrics.smallFontSize
+            )
+        end
+    end
+
+    -- --- Pieces -----------------------------------------------------------------
+
+    local fn emptyPrompt() -> View
+        return VStack(alignment: StackAlignment.Center, sizing: StackSize.Fit, spacing: 8.0) do
+            Icon(Glyphs.sprite, 44.0, ResourceStyle.accent(ResourceKind.Sprite).withAlpha(0.55))
+            Label("This sprite has no image yet.", color: Palette.textMuted)
+            Label(
+                "Use Load Sprite to pick a PNG.",
+                color: Palette.textMuted,
+                size: Metrics.smallFontSize
+            )
+            Label(
+                "A file named walk_strip4.png becomes 4 subimages.",
+                color: Palette.textMuted,
+                size: Metrics.smallFontSize
+            )
+        end.centered()
+    end
+
+    -- "3 / 8", or "–" for an empty sprite.
+    local fn counter(index: integer, count: integer) -> string
+        if count == 0 then
+            return "–"
+        end
+
+        return index .. " / " .. count
+    end
+
+    -- The action, only when `enabled` — a button with no action greys out.
+    local fn onlyIf(enabled: boolean, action: fn() -> nil) -> (fn() -> nil)?
+        if enabled then
+            return action
+        end
+
+        return nil
+    end
+end

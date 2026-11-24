@@ -1,0 +1,17 @@
+from MenuEntry import *
+
+-- ============================================================================
+-- Menu
+-- ============================================================================
+--
+-- A titled list of entries: one drop-down of the menu bar ("File", "Edit", …).
+
+export class Menu
+    title: string
+    entries: MenuEntry[]
+
+    fn init(title: string, entries: MenuEntry[])
+        self.title = title
+        self.entries = entries
+    end
+end

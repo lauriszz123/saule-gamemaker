@@ -1,0 +1,3 @@
+-- widgets/split — two panes with a draggable divider.
+
+export from SplitPane import *

@@ -1,0 +1,17 @@
+-- views/editors — what goes inside each kind of editor window.
+
+export from ResourceEditor import *
+export from SpriteRegions import *
+export from SpriteEditor import *
+export from SpriteFramesEditor import *
+export from ImageEditor import *
+export from EventPanel import *
+export from AddEventDialog import *
+export from ObjectEditor import *
+export from EventScriptEditor import *
+export from RoomEditor import *
+export from ScriptEditor import *
+export from PendingEditor import *
+export from GameInfoEditor import *
+export from GameSettingsEditor import *
+export from DocumentContent import *

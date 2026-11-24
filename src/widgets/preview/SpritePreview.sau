@@ -1,0 +1,243 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+from Checkerboard import *
+from ImageRegion import *
+
+-- ============================================================================
+-- SpritePreview
+-- ============================================================================
+--
+-- Shows one frame of an image sequence, centred and scaled to fit, over a
+-- transparency checkerboard. Pixel art is magnified by whole steps with
+-- crisp (nearest) sampling, so 16×16 art shows as clean blocks rather than a
+-- blur; anything bigger than the space is scaled down to fit.
+--
+--     SpritePreview(
+--         frames: regions,
+--         index: 1,
+--         playing: false,
+--         originX: 8, originY: 8,              -- draws the origin cross
+--         onPick: fn(x, y) … end               -- click/drag, in image pixels
+--     )
+--
+-- Playing advances through the frames on the frame clock and only repaints;
+-- nothing is rebuilt while it animates.
+
+export class SpritePreview extends View
+    frames: ImageRegion[]
+    index: integer
+    playing: boolean
+    fps: float
+    originX: integer?
+    originY: integer?
+    maxZoom: float
+    onPick: (fn(integer, integer) -> nil)?
+
+    fn init(
+        frames: ImageRegion[],
+        index: integer = 1,
+        playing: boolean = false,
+        fps: float = 10.0,
+        originX: integer? = nil,
+        originY: integer? = nil,
+        maxZoom: float = 8.0,
+        onPick: (fn(integer, integer) -> nil)? = nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.frames = frames
+        self.index = index
+        self.playing = playing
+        self.fps = fps
+        self.originX = originX
+        self.originY = originY
+        self.maxZoom = maxZoom
+        self.onPick = onPick
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    -- It has a tick to run: see `View.ticks`.
+    fn ticks() -> boolean
+        return true
+    end
+
+    fn tick(el: Element, dt: float) -> nil
+        if self.playing and #self.frames > 1 then
+            el.data.scratch.clock = ((el.data.scratch.clock as float?) ?? 0.0) + dt
+            Repaint.request()
+        end
+    end
+
+    -- Which frame is on screen: the chosen one, or the animation's.
+    local fn shown(el: Element) -> ImageRegion?
+        local count = #self.frames
+
+        if count == 0 then
+            return nil
+        end
+
+        local index = self.index
+
+        if self.playing and count > 1 then
+            local clock = (el.data.scratch.clock as float?) ?? 0.0
+            index = (Math.floor(clock * self.fps) ?? 0) % count + 1
+        end
+
+        if index < 1 or index > count then
+            index = 1
+        end
+
+        return self.frames[index]
+    end
+
+    -- Magnification for a w×h frame in this view: whole steps up to
+    -- `maxZoom` when it fits, fractional when it has to shrink.
+    local fn zoomFor(el: Element, w: integer, h: integer) -> float
+        local roomW = el.size.width - 16.0
+        local roomH = el.size.height - 16.0
+        local fit = Math.min(roomW / (w as float), roomH / (h as float))
+
+        if fit >= 1.0 then
+            return Math.min((Math.floor(fit) ?? 1) as float, self.maxZoom)
+        end
+
+        return Math.max(fit, 0.01)
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+
+        Palette.chromeDark.apply()
+        Graphics.rectangle("fill", x, y, w, h)
+
+        local region = self.shown(el)
+
+        if region == nil then
+            return
+        end
+
+        local frame = region!
+        local zoom = self.zoomFor(el, frame.width, frame.height)
+        local drawnW = (frame.width as float) * zoom
+        local drawnH = (frame.height as float) * zoom
+        local left = (Math.floor((w - drawnW) / 2.0) ?? 0) as float
+        local top = (Math.floor((h - drawnH) / 2.0) ?? 0) as float
+
+        -- Remembered for hit testing: where the image is, and how big a pixel.
+        el.data.scratch.left = left
+        el.data.scratch.top = top
+        el.data.scratch.zoom = zoom
+        el.data.scratch.imageW = frame.width
+        el.data.scratch.imageH = frame.height
+
+        Graphics.push("all")
+        Graphics.intersectScissor(x, y, w, h)
+
+        Checkerboard.fill(
+            x + left,
+            y + top,
+            drawnW,
+            drawnH,
+            Math.max(4.0, Math.min(8.0, zoom * 2.0))
+        )
+
+        local cell = Graphics.newQuad(
+            frame.x as float,
+            frame.y as float,
+            frame.width as float,
+            frame.height as float,
+            frame.pictureWidth as float,
+            frame.pictureHeight as float
+        )
+
+        Graphics.setDefaultFilter("nearest")
+        Graphics.setColor(1.0, 1.0, 1.0, 1.0)
+        Graphics.drawq(frame.picture, cell, x + left, y + top, 0.0, zoom, zoom)
+        Graphics.setDefaultFilter("linear")
+
+        Palette.bevelShadow.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + left - 0.5, y + top - 0.5, drawnW + 1.0, drawnH + 1.0)
+
+        self.paintOrigin(x + left, y + top, zoom, drawnW, drawnH)
+
+        Graphics.pop()
+    end
+
+    -- A crosshair through the origin pixel, the way GameMaker marks it.
+    local fn paintOrigin(left: float, top: float, zoom: float, drawnW: float, drawnH: float) -> nil
+        if self.originX == nil or self.originY == nil then
+            return
+        end
+
+        local cx = left + (self.originX! as float) * zoom
+        local cy = top + (self.originY! as float) * zoom
+        local arm = 7.0
+
+        Graphics.setLineWidth(1.0)
+        Color.hex(0xFFFFFF).apply()
+        Graphics.line(cx - arm, cy + 1.0, cx + arm, cy + 1.0)
+        Graphics.line(cx + 1.0, cy - arm, cx + 1.0, cy + arm)
+
+        Color.hex(0xD81E1E).apply()
+        Graphics.line(cx - arm, cy, cx + arm, cy)
+        Graphics.line(cx, cy - arm, cx, cy + arm)
+        Graphics.circle("line", cx, cy, 3.0)
+    end
+
+    -- Press, or drag, on the image to report the pixel under the pointer,
+    -- clamped to the image.
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        local pick = self.onPick
+
+        if pick == nil or el.data.scratch.zoom == nil then
+            return false
+        end
+
+        if event.kind == PointerKind.Down then
+            if not inside or not event.isPrimary() then
+                return false
+            end
+
+            el.data.pressed = true
+            self.report(el, x, y)
+
+            return true
+        end
+
+        if event.kind == PointerKind.Move and el.data.pressed then
+            self.report(el, x, y)
+
+            return false
+        end
+
+        if event.kind == PointerKind.Up then
+            el.data.pressed = false
+        end
+
+        return false
+    end
+
+    local fn report(el: Element, x: float, y: float) -> nil
+        local scratch = el.data.scratch
+        local zoom = (scratch.zoom as float?) ?? 1.0
+        local left = (scratch.left as float?) ?? 0.0
+        local top = (scratch.top as float?) ?? 0.0
+        local imageW = (scratch.imageW as integer?) ?? 0
+        local imageH = (scratch.imageH as integer?) ?? 0
+
+        local px = Math.floor((x - left) / zoom) ?? 0
+        local py = Math.floor((y - top) / zoom) ?? 0
+
+        px = Math.clamp(px, 0, imageW)
+        py = Math.clamp(py, 0, imageH)
+
+        self.onPick!(px, py)
+    end
+end

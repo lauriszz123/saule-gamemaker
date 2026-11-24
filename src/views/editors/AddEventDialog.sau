@@ -1,0 +1,357 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- openAddEventDialog
+-- ============================================================================
+--
+-- Pick an event to add to an object — or, given `changing`, what to turn an
+-- existing event into. `onDone` gets the id of the event added or changed.
+--
+--   ┌─ Add Event ─────────────────────────────────────────── × ┐
+--   │ ┌──────────────┐  ⌨ Key Press                            │
+--   │ │ 💡 Create     │  Runs once, the step a key goes down.    │
+--   │ │ 🗑 Destroy    │  Key:                                    │
+--   │ │ ⏰ Alarm      │  ┌────────────────────────────────────┐  │
+--   │ │ 🚶 Step       │  │ <any key>                          │  │
+--   │ │ …            │  │ Left                               │  │
+--   │ └──────────────┘  └────────────────────────────────────┘  │
+--   │                                       [ Add ] [ Cancel ]  │
+--   └───────────────────────────────────────────────────────────┘
+
+export fn openAddEventDialog(
+    context: BuildContext,
+    editor: Editor,
+    objectId: integer,
+    changing: ObjectEvent? = nil,
+    onDone: fn(integer) -> nil = (eventId: integer) => nil
+) -> OverlayHandle?
+    local owner = context.owner()
+
+    if owner == nil then
+        return nil
+    end
+
+    local overlay = owner!.overlay()
+    local entry = OverlayEntry() do
+        return Frame()
+    end
+
+    local handle = OverlayHandle(overlay, entry)
+
+    entry.builder = fn()
+        local dialog = AddEventDialog(
+            editor: editor,
+            objectId: objectId,
+            changing: changing,
+            onDone: fn(eventId: integer)
+                handle.close()
+                onDone(eventId)
+            end,
+            onCancel: fn()
+                handle.close()
+            end
+        )
+
+        return ModalBarrier(
+            color: Color.rgba(0, 0, 0, 0.18),
+            child: Center(child: dialog.frame(width: 560.0, height: 420.0))
+        )
+    end
+
+    overlay.insert(entry)
+
+    return handle
+end
+
+-- ============================================================================
+-- AddEventDialog
+-- ============================================================================
+
+export class AddEventDialog extends View
+    editor: Editor
+    objectId: integer
+    changing: ObjectEvent?
+    onDone: fn(integer) -> nil
+    onCancel: fn() -> nil
+
+    fn init(
+        editor: Editor,
+        objectId: integer,
+        changing: ObjectEvent?,
+        onDone: fn(integer) -> nil,
+        onCancel: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.editor = editor
+        self.objectId = objectId
+        self.changing = changing
+        self.onDone = onDone
+        self.onCancel = onCancel
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local project = editor.project
+        local kinds = EventKinds.all()
+
+        -- Start on the event being changed, or on Create.
+        local start = self.changing
+        local startKind = 1
+        local startDetail = ""
+        local startTarget = 0
+
+        if start != nil then
+            for i = 1, #kinds do
+                if kinds[i] == start!.kind then
+                    startKind = i
+                end
+            end
+
+            startDetail = start!.detail
+            startTarget = start!.target
+        end
+
+        local kindState = context.state("kind", startKind)
+        local detailState = context.state("detail", startDetail)
+        local targetState = context.state("target", startTarget)
+
+        local kind = kinds[Math.clamp(kindState.int(startKind), 1, #kinds)]
+        local detail = detailState.text(startDetail)
+        local target = targetState.int(startTarget)
+
+        -- Collisions need another object; start on the first one.
+        local objects = project.all(ResourceKind.Object)
+        if kind == EventKind.Collision and target == 0 and #objects > 0 then
+            target = objects[1].id
+        end
+
+        if kind != EventKind.Collision then
+            target = 0
+        end
+
+        local except = 0
+        if self.changing != nil then
+            except = self.changing!.id
+        end
+
+        local problem = editor.eventProblem(self.objectId, kind, detail, target, except)
+
+        local confirm = fn()
+            if problem != nil then
+                return
+            end
+
+            if self.changing != nil then
+                editor.changeObjectEvent(self.objectId, except, kind, detail, target)
+                self.onDone(except)
+            else
+                self.onDone(editor.addObjectEvent(self.objectId, kind, detail, target))
+            end
+        end
+
+        local pickKind = fn(index: integer) -> nil
+            local next = kinds[index]
+
+            kindState.set(index)
+
+            -- A fresh detail for the new kind — but keep a typed name when
+            -- switching between Alarm and User.
+            if not (next.isNamed() and kind.isNamed()) then
+                detailState.set(EventCatalog.first(next))
+            end
+        end
+
+        local kindItems: ChoiceItem[] = {}
+        for each in kinds do
+            kindItems[#kindItems + 1] = ChoiceItem(
+                each.title(),
+                glyph: EventStyle.glyph(each),
+                glyphColor: EventStyle.accent(each)
+            )
+        end
+
+        local detailArea = self.detailArea(
+            kind,
+            detail,
+            target,
+            objects,
+            detailState,
+            targetState,
+            confirm
+        )
+
+        local note: View = Frame(height: 16.0)
+        if problem != nil and not (kind.isNamed() and String.trim(detail) == "") then
+            note = Label(problem!, color: Palette.debug, size: Metrics.smallFontSize).frame(
+                height: 16.0
+            )
+        end
+
+        local verb = "Add"
+        local title = "Add Event"
+        if self.changing != nil then
+            verb = "Change"
+            title = "Change Event"
+        end
+
+        local confirmAction: (fn() -> nil)? = nil
+        if problem == nil then
+            confirmAction = confirm
+        end
+
+        local right = VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+                Icon(EventStyle.glyph(kind), 22.0, EventStyle.accent(kind))
+                Label(kind.title(), size: 15.0)
+            end.frame(height: 26.0)
+            Text(kind.summary(), style: TextStyle(color: Palette.textMuted, size: Metrics.fontSize))
+            detailArea.expanded()
+            show(note)
+        end
+
+        local content = VStack(alignment: StackAlignment.Fill, spacing: 10.0) do
+            HStack(alignment: StackAlignment.Fill, spacing: 12.0) do
+                ChoiceList(
+                    items: kindItems,
+                    selected: Math.clamp(kindState.int(startKind), 1, #kinds),
+                    onSelect: pickKind,
+                    onActivate: fn(index: integer)
+                        pickKind(index)
+                    end
+                ).frame(width: 170.0)
+                right.expanded()
+            end.expanded()
+
+            HStack(distribution: Distribution.End, spacing: 8.0) do
+                PushButton(
+                    label: verb,
+                    glyph: Glyphs.check,
+                    glyphColor: Palette.run,
+                    width: 90.0,
+                    action: confirmAction
+                )
+                PushButton(label: "Cancel", width: 90.0, action: self.onCancel)
+            end.frame(height: 26.0)
+        end
+
+        return Focus(modal: true, autofocus: true, tabStop: false, onKeyDown: fn(event: KeyEvent)
+            if event.key == "escape" then
+                self.onCancel()
+
+                return true
+            end
+
+            if event.key == "return" then
+                confirm()
+
+                return true
+            end
+
+            return false
+        end, child: DialogFrame(title: title, glyph: Glyphs.addEvent, onClose: self.onCancel) do
+            content.padding(10.0)
+        end)
+    end
+
+    -- What to pick for the kind: a name, an object, or one of a list.
+    local fn detailArea(
+        kind: EventKind,
+        detail: string,
+        target: integer,
+        objects: Resource[],
+        detailState: Binding,
+        targetState: Binding,
+        confirm: fn() -> nil
+    ) -> View
+        if kind.isNamed() then
+            local example = "ShootRate"
+            if kind == EventKind.User then
+                example = "OnHit"
+            end
+
+            return VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+                FormRow(
+                    label: "Name:",
+                    labelWidth: 52.0,
+                    child: Field(value: detail, placeholder: example) do (text: string)
+                        detailState.set(text)
+                    end
+                )
+                Text(
+                    "Scripts refer to it by this name. Letters, digits and _, like " .. example .. ".",
+                    style: TextStyle(color: Palette.textMuted, size: Metrics.smallFontSize)
+                )
+                Spacer()
+            end
+        end
+
+        if kind == EventKind.Collision then
+            if #objects == 0 then
+                return Label("There are no objects to collide with yet.", color: Palette.textMuted).centered()
+            end
+
+            local items: ChoiceItem[] = {}
+            local selected = 0
+
+            for i = 1, #objects do
+                items[#items + 1] = ChoiceItem(
+                    objects[i].name,
+                    glyph: Glyphs.object,
+                    glyphColor: ResourceStyle.accent(ResourceKind.Object)
+                )
+
+                if objects[i].id == target then
+                    selected = i
+                end
+            end
+
+            return VStack(alignment: StackAlignment.Fill, spacing: 4.0) do
+                Label("With:")
+                ChoiceList(items: items, selected: selected, onSelect: fn(index: integer)
+                    targetState.set(objects[index].id)
+                end, onActivate: fn(index: integer)
+                    targetState.set(objects[index].id)
+                    confirm()
+                end).expanded()
+            end
+        end
+
+        local choices = EventCatalog.choices(kind)
+
+        if #choices == 0 then
+            return Frame()
+        end
+
+        local items: ChoiceItem[] = {}
+        local selected = 0
+
+        for i = 1, #choices do
+            items[#items + 1] = ChoiceItem(choices[i].title)
+
+            if choices[i].value == detail then
+                selected = i
+            end
+        end
+
+        local caption = "Which:"
+        if kind.isKey() then
+            caption = "Key:"
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 4.0) do
+            Label(caption)
+            ChoiceList(items: items, selected: selected, onSelect: fn(index: integer)
+                detailState.set(choices[index].value)
+            end, onActivate: fn(index: integer)
+                detailState.set(choices[index].value)
+                confirm()
+            end).expanded()
+        end
+    end
+end

@@ -1,0 +1,72 @@
+-- ============================================================================
+-- Document
+-- ============================================================================
+--
+-- One open editor window in the workspace: what it is editing and where it
+-- sits. Most documents edit a resource; a couple edit the game as a whole.
+
+export enum DocumentKind
+
+    -- A resource's properties window.
+    Resource = "resource",
+
+    -- The frame-by-frame sprite editor ("Edit Sprite").
+    SpriteFrames = "spriteframes",
+
+    -- Painting the pixels of one subimage.
+    SpriteImage = "spriteimage",
+
+    -- The code of one event of an object.
+    EventScript = "eventscript",
+    GameInformation = "gameinfo",
+    GameSettings = "settings"
+end
+
+export class Document
+    id: integer
+    kind: DocumentKind
+
+    -- The resource being edited, or 0 for a document that isn't about one.
+    resourceId: integer
+
+    -- Which part of it: the id of the sprite frame an image editor paints,
+    -- or of the event whose script is open; 0 for documents about the
+    -- whole resource.
+    part: integer
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    maximized: boolean
+    minimized: boolean
+
+    fn init(
+        id: integer,
+        kind: DocumentKind,
+        resourceId: integer,
+        part: integer,
+        x: float,
+        y: float,
+        width: float,
+        height: float
+    )
+        self.id = id
+        self.kind = kind
+        self.resourceId = resourceId
+        self.part = part
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.maximized = false
+        self.minimized = false
+    end
+
+    -- Is this the window for that thing? Used to bring an already-open
+    -- editor forward instead of opening a second copy.
+    fn shows(kind: DocumentKind, resourceId: integer, part: integer = 0) -> boolean
+        return self.kind == kind and self.resourceId == resourceId and self.part == part
+    end
+end

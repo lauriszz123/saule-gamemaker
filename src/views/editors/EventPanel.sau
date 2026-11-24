@@ -1,0 +1,337 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from util import Parse
+
+-- ============================================================================
+-- EventPanel
+-- ============================================================================
+--
+-- The right-hand side of the object editor: the selected event, its
+-- settings, and a look at its script.
+--
+--   ⏰ Alarm (ShootRate)
+--   A named timer. Scripts start it; when it runs out, this runs.
+--   Name:  [ShootRate      ]
+--   Time:  [30    ] [Steps ▾]
+--   ☑ Repeat   ☐ Start on create
+--   Script                                       3 lines
+--   ┌────────────────────────────────────────────────────┐
+--   │ shoot()                                            │
+--   └────────────────────────────────────────────────────┘
+--   [ Edit Script ]
+--
+-- Every event has a script; only some have settings. An event inherited
+-- from a parent shows the parent's script and offers to override it.
+
+export class EventPanel extends View
+    editor: Editor
+    objectId: integer
+    event: ObjectEvent
+
+    -- The object the event is defined on: `objectId` for its own events, a
+    -- parent's id for an inherited one.
+    ownerId: integer
+
+    -- Selects another row of the event list, by its key.
+    onSelect: fn(string) -> nil
+
+    fn init(
+        editor: Editor,
+        objectId: integer,
+        event: ObjectEvent,
+        ownerId: integer,
+        onSelect: fn(string) -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.editor = editor
+        self.objectId = objectId
+        self.event = event
+        self.ownerId = ownerId
+        self.onSelect = onSelect
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local event = self.event
+        local kind = event.kind
+        local inherited = self.ownerId != self.objectId
+
+        local header = HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+            Icon(EventStyle.glyph(kind), 22.0, EventStyle.accent(kind))
+            Label(editor.project.eventTitle(event), size: 15.0).expanded()
+        end.frame(height: 26.0)
+
+        local column: View[] = {
+            header,
+            Text(
+                kind.summary(),
+                style: TextStyle(color: Palette.textMuted, size: Metrics.smallFontSize)
+            ),
+        }
+
+        if inherited then
+            column[#column + 1] = self.inheritedNote()
+        else
+            for row in self.settings(context) do
+                column[#column + 1] = row
+            end
+        end
+
+        column[#column + 1] = Rule(etched: true)
+
+        for row in self.script(inherited) do
+            column[#column + 1] = row
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 8.0, children: column)
+    end
+
+    -- --- Settings ----------------------------------------------------------------
+
+    local fn settings(context: BuildContext) -> View[]
+        local event = self.event
+        local kind = event.kind
+        local rows: View[] = {}
+
+        if kind.isNamed() then
+            rows[#rows + 1] = self.nameRow(context)
+        end
+
+        local alarm = event.alarm
+        if alarm != nil then
+            for row in self.alarmRows(context, alarm!) do
+                rows[#rows + 1] = row
+            end
+        end
+
+        if kind == EventKind.Collision then
+            rows[#rows + 1] = self.collisionRow()
+        end
+
+        return rows
+    end
+
+    -- The name of an alarm or user event. A name that can't be used — taken,
+    -- empty, with a space in it — is kept in the box but not applied, and
+    -- the reason shows underneath.
+    local fn nameRow(context: BuildContext) -> View
+        local editor = self.editor
+        local id = self.objectId
+        local event = self.event
+        local draft = context.state("name", event.detail)
+        local typed = draft.text(event.detail)
+
+        local problem: string? = nil
+        if typed != event.detail then
+            problem = editor.eventProblem(id, event.kind, typed, 0, event.id)
+        end
+
+        local row = FormRow(
+            label: "Name:",
+            labelWidth: 52.0,
+            child: Field(value: typed) do (text: string)
+                draft.set(text)
+                editor.renameObjectEvent(id, event.id, text)
+            end
+        )
+
+        if problem == nil then
+            return row
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 3.0) do
+            show(row)
+            Label(problem!, color: Palette.debug, size: Metrics.smallFontSize).padding(
+                insets: EdgeInsets.only(left: 58.0)
+            )
+        end
+    end
+
+    local fn alarmRows(context: BuildContext, alarm: AlarmSettings) -> View[]
+        local editor = self.editor
+        local id = self.objectId
+        local eventId = self.event.id
+
+        local apply = fn(time: float, unit: TimeUnit, repeats: boolean, start: boolean) -> nil
+            editor.setAlarmSettings(id, eventId, AlarmSettings(time, unit, repeats, start))
+        end
+
+        local units = {TimeUnit.Steps, TimeUnit.Seconds}
+        local unitItems: DropdownItem[] = {
+            DropdownItem(TimeUnit.Steps.title()),
+            DropdownItem(TimeUnit.Seconds.title()),
+        }
+        local unitIndex = 1
+        if alarm.unit == TimeUnit.Seconds then
+            unitIndex = 2
+        end
+
+        local time = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            Label("Time:").frame(width: 52.0)
+            Field(value: AlarmSettings.number(alarm.time)) do (text: string)
+                local value = Parse.number(text)
+
+                if value != nil and value! > 0.0 then
+                    apply(value!, alarm.unit, alarm.repeats, alarm.startOnCreate)
+                end
+            end.expanded()
+            Dropdown(items: unitItems, selected: unitIndex) do (index: integer)
+                apply(alarm.time, units[index], alarm.repeats, alarm.startOnCreate)
+            end.frame(width: 100.0)
+        end.frame(height: 26.0)
+
+        return {
+            time,
+            HStack(spacing: 16.0) do
+                Checkbox(value: alarm.repeats, label: "Repeat", onChanged: fn(on: boolean)
+                    apply(alarm.time, alarm.unit, on, alarm.startOnCreate)
+                end)
+                Checkbox(
+                    value: alarm.startOnCreate,
+                    label: "Start on create",
+                    onChanged: fn(on: boolean)
+                        apply(alarm.time, alarm.unit, alarm.repeats, on)
+                    end
+                )
+            end.frame(height: 22.0),
+        }
+    end
+
+    -- Which object a collision is with. Objects that already have a
+    -- collision event with this one are greyed out.
+    local fn collisionRow() -> View
+        local editor = self.editor
+        local project = editor.project
+        local id = self.objectId
+        local event = self.event
+        local object = editor.object(id)
+
+        local ids: integer[] = {}
+        local items: DropdownItem[] = {}
+        local selected = 0
+
+        for other in project.all(ResourceKind.Object) do
+            local taken = object != nil and object!.slot(EventKind.Collision, "", other.id) != nil
+
+            ids[#ids + 1] = other.id
+            items[#items + 1] = DropdownItem(
+                other.name,
+                Glyphs.object,
+                ResourceStyle.accent(ResourceKind.Object),
+                enabled: not taken or other.id == event.target
+            )
+
+            if other.id == event.target then
+                selected = #ids
+            end
+        end
+
+        return FormRow(
+            label: "With:",
+            labelWidth: 52.0,
+            child: Dropdown(items: items, selected: selected) do (index: integer)
+                editor.changeObjectEvent(id, event.id, EventKind.Collision, "", ids[index])
+            end
+        )
+    end
+
+    -- For an inherited event: where it comes from, and a way to take it over.
+    local fn inheritedNote() -> View
+        local editor = self.editor
+        local owner = editor.project.nameOf(self.ownerId)
+        local id = self.objectId
+        local event = self.event
+
+        return Surface(
+            color: Palette.selectionInactive,
+            border: Palette.hoverBorder,
+            radius: 3.0,
+            child: VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+                Text(
+                    "Inherited from " .. owner .. ". Override it to give this object its own version.",
+                    style: TextStyle(color: Palette.text, size: Metrics.fontSize)
+                )
+                HStack(spacing: 6.0) do
+                    PushButton(label: "Override", glyph: Glyphs.pencil, glyphColor: Palette.info) do
+                        self.onSelect("own:" .. editor.overrideEvent(id, event))
+                    end
+                    PushButton(label: "Open " .. owner, glyph: Glyphs.object) do
+                        editor.openResource(self.ownerId)
+                    end
+                end.frame(height: 26.0)
+            end.padding(8.0)
+        )
+    end
+
+    -- --- Script --------------------------------------------------------------------
+
+    local fn script(inherited: boolean) -> View[]
+        local editor = self.editor
+        local event = self.event
+        local code = event.code
+        local lines = #String.split(code, "\n")
+
+        local preview: View = Text(
+            "No code yet. Edit Script to write what happens.",
+            style: TextStyle(color: Palette.textDisabled, size: Metrics.fontSize)
+        ).padding(8.0)
+
+        if String.trim(code) != "" then
+            preview = Text(
+                code,
+                style: TextStyle(color: Palette.text, size: Metrics.fontSize),
+                softWrap: false
+            ).padding(8.0)
+        end
+
+        local count = lines .. " lines"
+        if lines == 1 then
+            count = "1 line"
+        end
+        if String.trim(code) == "" then
+            count = ""
+        end
+
+        local label = "Edit Script"
+        if inherited then
+            label = "Edit " .. editor.project.nameOf(self.ownerId) .. "'s Script"
+        end
+
+        local ownerId = self.ownerId
+        local open = fn()
+            editor.openEventScript(ownerId, event.id)
+        end
+
+        return {
+            HStack(spacing: 6.0) do
+                Label("Script")
+                Spacer()
+                Label(count, color: Palette.textMuted, size: Metrics.smallFontSize)
+            end.frame(height: 18.0),
+            GestureArea(
+                child: Edges.box(
+                    preview.aligned(Alignment.topLeft()).clipped(),
+                    Palette.fieldBorder,
+                    Palette.field
+                ),
+                onDoubleTapAt: fn(x: float, y: float)
+                    open()
+                end
+            ).expanded(),
+            HStack(spacing: 6.0) do
+                PushButton(
+                    label: label,
+                    glyph: Glyphs.script,
+                    glyphColor: Palette.info,
+                    action: open
+                )
+                Spacer()
+            end.frame(height: 26.0),
+        }
+    end
+end

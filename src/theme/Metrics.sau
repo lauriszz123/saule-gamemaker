@@ -1,0 +1,36 @@
+-- ============================================================================
+-- Metrics
+-- ============================================================================
+--
+-- Sizes shared across the editor, in logical pixels. Keeping them together
+-- is what makes the chrome line up: the tree row, the menu row and the tool
+-- button are all derived from the same handful of numbers.
+
+export class Metrics
+    -- Type.
+    static fontSize: float = 13.0
+    static smallFontSize: float = 12.0
+    static iconSize: float = 16.0
+    static toolIconSize: float = 20.0
+
+    -- The bars across the top of the main window.
+    static menuBarHeight: float = 24.0
+    static toolStripHeight: float = 34.0
+    static toolButtonSize: float = 28.0
+
+    -- Menus.
+    static menuWidth: float = 290.0
+    static menuRowHeight: float = 24.0
+
+    -- The resource tree.
+    static treeRowHeight: float = 21.0
+    static treeIndent: float = 18.0
+    static treeWidth: float = 240.0
+
+    -- Editor windows inside the workspace.
+    static titleBarHeight: float = 26.0
+    static minimizedWidth: float = 210.0
+    static minWindowWidth: float = 220.0
+    static minWindowHeight: float = 140.0
+    static splitterWidth: float = 5.0
+end

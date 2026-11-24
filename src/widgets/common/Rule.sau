@@ -1,0 +1,79 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+
+-- ============================================================================
+-- Rule
+-- ============================================================================
+--
+-- A one-pixel line: across a column (`Rule()`) or down a row
+-- (`Rule(vertical: true)`). It stretches along its length to whatever it is
+-- given and takes exactly `thickness` across it.
+--
+-- `etched` draws the classic grooved separator — a shadow line with a light
+-- line beside it — the way menu and tool-strip separators look.
+
+export class Rule extends View
+    vertical: boolean
+    color: Color?
+    thickness: float
+    etched: boolean
+
+    fn init(
+        vertical: boolean = false,
+        color: Color? = nil,
+        thickness: float = 1.0,
+        etched: boolean = false,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.vertical = vertical
+        self.color = color
+        self.thickness = thickness
+        self.etched = etched
+    end
+
+    local fn across() -> float
+        if self.etched then
+            return self.thickness * 2.0
+        end
+
+        return self.thickness
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        local biggest = constraints.biggest()
+
+        if self.vertical then
+            return constraints.constrain(Size(self.across(), biggest.height))
+        end
+
+        return constraints.constrain(Size(biggest.width, self.across()))
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+        local t = self.thickness
+
+        local ink = self.color ?? Palette.chromeEdge
+        ink.apply()
+
+        if self.vertical then
+            Graphics.rectangle("fill", x, y, t, h)
+        else
+            Graphics.rectangle("fill", x, y, w, t)
+        end
+
+        if self.etched then
+            Palette.bevelLight.apply()
+
+            if self.vertical then
+                Graphics.rectangle("fill", x + t, y, t, h)
+            else
+                Graphics.rectangle("fill", x, y + t, w, t)
+            end
+        end
+    end
+end

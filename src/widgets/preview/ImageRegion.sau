@@ -1,0 +1,46 @@
+from shine import Image
+
+-- ============================================================================
+-- ImageRegion
+-- ============================================================================
+--
+-- A rectangle of pixels inside an image: what an image preview draws. The
+-- widgets take these rather than sprite frames, so they stay usable for
+-- anything that shows part of an image — backgrounds, tiles, fonts.
+--
+-- The image's full size comes along too, because drawing a region needs it
+-- and asking the image itself is unsafe in a file that also imports uikit,
+-- which exports an unrelated *view* called `Image`.
+
+export class ImageRegion
+    picture: Image
+    x: integer
+    y: integer
+    width: integer
+    height: integer
+    pictureWidth: integer
+    pictureHeight: integer
+
+    fn init(
+        picture: Image,
+        x: integer,
+        y: integer,
+        width: integer,
+        height: integer,
+        pictureWidth: integer,
+        pictureHeight: integer
+    )
+        self.picture = picture
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.pictureWidth = pictureWidth
+        self.pictureHeight = pictureHeight
+    end
+
+    -- The whole of a `width` × `height` picture.
+    static fn whole(picture: Image, width: integer, height: integer) -> ImageRegion
+        return ImageRegion(picture, 0, 0, width, height, width, height)
+    end
+end

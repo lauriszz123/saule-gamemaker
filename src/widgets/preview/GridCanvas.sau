@@ -1,0 +1,80 @@
+from shine import Graphics
+from uikit import *
+
+-- ============================================================================
+-- GridCanvas
+-- ============================================================================
+--
+-- A flat colour with a snap grid over it — the empty room in the room
+-- editor. `cell` is the grid spacing; every `major`-th line is drawn darker.
+
+export class GridCanvas extends View
+    cell: float
+    major: integer
+    fill: Color
+    line: Color
+    majorLine: Color
+
+    fn init(
+        cell: float = 16.0,
+        major: integer = 4,
+        fill: Color? = nil,
+        line: Color? = nil,
+        majorLine: Color? = nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.cell = cell
+        self.major = major
+        self.fill = fill ?? Color.hex(0xC0C0C0)
+        self.line = line ?? Color.rgba(0, 0, 0, 0.10)
+        self.majorLine = majorLine ?? Color.rgba(0, 0, 0, 0.22)
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+
+        self.fill.apply()
+        Graphics.rectangle("fill", x, y, w, h)
+
+        Graphics.push("all")
+        Graphics.intersectScissor(x, y, w, h)
+        Graphics.setLineWidth(1.0)
+
+        local index = 0
+        local at = 0.0
+
+        while at <= w do
+            self.pick(index).apply()
+            Graphics.line(x + at + 0.5, y, x + at + 0.5, y + h)
+            at += self.cell
+            index += 1
+        end
+
+        index = 0
+        at = 0.0
+
+        while at <= h do
+            self.pick(index).apply()
+            Graphics.line(x, y + at + 0.5, x + w, y + at + 0.5)
+            at += self.cell
+            index += 1
+        end
+
+        Graphics.pop()
+    end
+
+    local fn pick(index: integer) -> Color
+        if index % self.major == 0 then
+            return self.majorLine
+        end
+
+        return self.line
+    end
+end

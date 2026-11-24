@@ -1,0 +1,115 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- ResourceEditor
+-- ============================================================================
+--
+-- The base every "<Kind> Properties" window extends. They all share one
+-- shape — a column of properties down the left with the name at the top and
+-- OK at the bottom, and the kind's own work area filling the right:
+--
+--   ┌──────────────┬───────────────────────────────┐
+--   │ Name: [____] │                               │
+--   │ …            │    work area (preview, room,  │
+--   │              │    events, code …)            │
+--   │ [   OK    ]  │                               │
+--   └──────────────┴───────────────────────────────┘
+--
+-- A subclass overrides `properties()` and `workArea()`; the frame round them
+-- is drawn once, here.
+
+export class ResourceEditor extends View
+    editor: Editor
+    resource: Resource
+    documentId: integer
+
+    fn init(editor: Editor, resource: Resource, documentId: integer, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.resource = resource
+        self.documentId = documentId
+    end
+
+    -- The controls under the name. Override to add a kind's own. `context`
+    -- is this window's, for state that belongs to the view rather than the
+    -- game (which subimage is showing, say).
+    fn properties(context: BuildContext) -> View[]
+        return {}
+    end
+
+    -- The right-hand side. `nil` means the kind has none, and the property
+    -- column takes the whole window.
+    fn workArea(context: BuildContext) -> View?
+        return nil
+    end
+
+    fn sidebarWidth() -> float
+        return 220.0
+    end
+
+    fn body(context: BuildContext) -> View
+        local column: View[] = {self.nameRow()}
+
+        for row in self.properties(context) do
+            column[#column + 1] = row
+        end
+
+        column[#column + 1] = Spacer()
+        column[#column + 1] = self.okButton()
+
+        local sidebar = VStack(alignment: StackAlignment.Fill, spacing: 8.0, children: column).padding(
+            10.0
+        )
+        local area = self.workArea(context)
+
+        if area == nil then
+            return sidebar
+        end
+
+        return HStack(alignment: StackAlignment.Fill) do
+            sidebar.frame(width: self.sidebarWidth())
+            Rule(vertical: true, etched: true)
+            area!.padding(8.0).expanded()
+        end
+    end
+
+    -- --- Pieces subclasses reuse ---------------------------------------------------
+
+    -- "Name: [sprite0]" — renaming here renames everywhere at once.
+    fn nameRow() -> View
+        local id = self.resource.id
+
+        return FormRow(
+            label: "Name:",
+            labelWidth: 48.0,
+            child: Field(value: self.resource.name) do (text: string)
+                self.editor.renameResource(id, text)
+            end
+        )
+    end
+
+    -- Closes this window.
+    fn okButton() -> View
+        local workspace = self.editor.workspace
+        local documentId = self.documentId
+
+        return PushButton(label: "OK", glyph: Glyphs.check, glyphColor: Palette.run) do
+            workspace.close(documentId)
+        end
+    end
+
+    -- A muted line of text, for read-only facts like "Width: 0".
+    fn fact(text: string) -> View
+        return Label(text, color: Palette.textMuted)
+    end
+
+    -- A small heading over a group of properties.
+    fn heading(text: string) -> View
+        return Label(text, color: Palette.text, size: Metrics.smallFontSize)
+    end
+end

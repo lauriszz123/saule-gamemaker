@@ -1,0 +1,49 @@
+from uikit import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- GameSettingsEditor
+-- ============================================================================
+--
+-- Global Game Settings: one tab per group of settings. The tabs are laid out;
+-- what goes in each is still to come.
+
+export class GameSettingsEditor extends View
+    editor: Editor
+    documentId: integer
+
+    fn init(editor: Editor, documentId: integer, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.documentId = documentId
+    end
+
+    fn body(context: BuildContext) -> View
+        local tab = context.state("tab", 1)
+        local tabs: string[] = {"Graphics", "Resolution", "Other", "Loading", "Errors", "Info"}
+        local workspace = self.editor.workspace
+        local documentId = self.documentId
+
+        local page = Label(
+            "The " .. tabs[tab.int()] .. " settings aren't built yet.",
+            color: Palette.textMuted
+        ).centered()
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            TabBar(tabs: tabs, index: tab.int(), onChanged: fn(next: integer)
+                tab.set(next)
+            end)
+
+            Edges.box(page, Palette.fieldBorder, Palette.field).expanded()
+
+            HStack(distribution: Distribution.End, sizing: StackSize.Fill) do
+                PushButton(label: "OK", glyph: Glyphs.check, glyphColor: Palette.run, width: 90.0) do
+                    workspace.close(documentId)
+                end
+            end.frame(height: 26.0)
+        end.padding(8.0)
+    end
+end

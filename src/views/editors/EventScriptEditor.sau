@@ -1,0 +1,98 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- EventScriptEditor
+-- ============================================================================
+--
+-- The code of one object event, in a window of its own — opened with "Edit
+-- Script", or by double-clicking the event.
+--
+--   ┌──────────────────────────────────────────────────────┐
+--   │ ⏰ player · Alarm (ShootRate)                  [ OK ] │
+--   ├──────────────────────────────────────────────────────┤
+--   │ shoot()                                              │
+--   │                                                      │
+--   ├──────────────────────────────────────────────────────┤
+--   │ 1 line                                               │
+--   └──────────────────────────────────────────────────────┘
+--
+-- Every keystroke is stored straight away, so the object window's preview
+-- follows along and nothing is lost when the window closes.
+
+export class EventScriptEditor extends View
+    editor: Editor
+    objectId: integer
+    eventId: integer
+    documentId: integer
+
+    fn init(
+        editor: Editor,
+        objectId: integer,
+        eventId: integer,
+        documentId: integer,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.editor = editor
+        self.objectId = objectId
+        self.eventId = eventId
+        self.documentId = documentId
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local id = self.objectId
+        local eventId = self.eventId
+        local event = editor.objectEvent(id, eventId)
+
+        if event == nil then
+            return Label("This event no longer exists.", color: Palette.textMuted).centered()
+        end
+
+        local kind = event!.kind
+        local workspace = editor.workspace
+        local documentId = self.documentId
+        local title = editor.project.nameOf(id) .. " · " .. editor.project.eventTitle(event!)
+
+        local strip = Edges(
+            fill: Palette.chrome,
+            bottom: Palette.chromeEdge,
+            child: HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+                Icon(EventStyle.glyph(kind), Metrics.iconSize, EventStyle.accent(kind))
+                Label(title).expanded()
+                PushButton(label: "OK", glyph: Glyphs.check, glyphColor: Palette.run, width: 80.0) do
+                    workspace.close(documentId)
+                end
+            end.padding(insets: EdgeInsets.symmetric(horizontal: 8.0))
+        ).frame(height: 36.0)
+
+        local lines = #String.split(event!.code, "\n")
+        local status = lines .. " lines"
+        if lines == 1 then
+            status = "1 line"
+        end
+
+        return VStack(alignment: StackAlignment.Fill) do
+            show(strip)
+            TextArea(
+                value: event!.code,
+                placeholder: "-- Saule code that runs on " .. editor.project.eventTitle(event!),
+                softWrap: false
+            ) do (text: string)
+                editor.setEventCode(id, eventId, text)
+            end.padding(6.0).expanded()
+            Edges(
+                fill: Palette.chrome,
+                top: Palette.chromeEdge,
+                child: Label(status, color: Palette.textMuted, size: Metrics.smallFontSize).aligned(
+                    Alignment.centerLeft()
+                ).padding(insets: EdgeInsets.symmetric(horizontal: 8.0))
+            ).frame(height: 22.0)
+        end
+    end
+end

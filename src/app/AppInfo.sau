@@ -1,0 +1,13 @@
+-- ============================================================================
+-- AppInfo
+-- ============================================================================
+--
+-- The application's name and version, in one place.
+
+export class AppInfo
+    static name: string = "Saule Maker"
+    static version: string = "0.1.0"
+
+    -- Where the Material Icons font lives, relative to the project root.
+    static iconFont: string = "assets/fonts/MaterialIcons-Regular.ttf"
+end

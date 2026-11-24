@@ -1,0 +1,105 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from TreeNode import *
+
+-- ============================================================================
+-- TreeRow
+-- ============================================================================
+--
+-- One visible line of a tree:  ▸ [glyph] label
+--
+-- The expander toggles; pressing the row selects it; double-clicking it
+-- activates it; right-clicking selects it and asks for a context menu. The
+-- row reports all of that upward and decides none of it — the `TreeView`
+-- owns the behaviour.
+
+export class TreeRow extends View
+    node: TreeNode
+    depth: integer
+    expanded: boolean
+    selected: boolean
+    onToggle: fn() -> nil
+    onSelect: fn() -> nil
+    onActivate: fn() -> nil
+    onContextMenu: fn(float, float) -> nil
+
+    fn init(
+        node: TreeNode,
+        depth: integer,
+        expanded: boolean,
+        selected: boolean,
+        onToggle: fn() -> nil,
+        onSelect: fn() -> nil,
+        onActivate: fn() -> nil,
+        onContextMenu: fn(float, float) -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.node = node
+        self.depth = depth
+        self.expanded = expanded
+        self.selected = selected
+        self.onToggle = onToggle
+        self.onSelect = onSelect
+        self.onActivate = onActivate
+        self.onContextMenu = onContextMenu
+    end
+
+    fn body(context: BuildContext) -> View
+        local node = self.node
+
+        local expander: View = Frame(width: 18.0)
+
+        if node.canExpand() then
+            local arrow = Glyphs.expand
+            if self.expanded then
+                arrow = Glyphs.collapse
+            end
+
+            expander = GestureArea(
+                child: Icon(arrow, 18.0, Palette.textMuted).centered().frame(width: 18.0),
+                onTap: self.onToggle
+            )
+        end
+
+        local glyph = node.glyph
+        if self.expanded and node.openGlyph != nil then
+            glyph = node.openGlyph!
+        end
+
+        -- Only the label is highlighted, the way a classic tree does it.
+        local label: View = Label(node.label).padding(
+            insets: EdgeInsets.symmetric(horizontal: 4.0, vertical: 1.0)
+        )
+
+        if self.selected then
+            label = Label(node.label, color: Palette.textOnAccent).padding(
+                insets: EdgeInsets.symmetric(horizontal: 4.0, vertical: 1.0)
+            ).background(Palette.selection, radius: 2.0)
+        end
+
+        local row = HStack(alignment: StackAlignment.Center, spacing: 2.0) do
+            Frame(width: (self.depth as float) * Metrics.treeIndent)
+            show(expander)
+            Icon(glyph, Metrics.iconSize, node.glyphColor ?? Palette.textMuted)
+            Frame(width: 2.0)
+            show(label)
+        end
+
+        return GestureArea(
+            child: row.frame(height: Metrics.treeRowHeight),
+            onTapDown: self.onSelect,
+            onDoubleTapAt: fn(x: float, y: float)
+                self.onActivate()
+            end,
+            onSecondaryTapAt: fn(x: float, y: float)
+                local origin = absoluteOf(context.element())
+
+                self.onSelect()
+                self.onContextMenu(origin.dx + x, origin.dy + y)
+            end
+        )
+    end
+end

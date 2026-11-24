@@ -1,0 +1,55 @@
+from uikit import *
+from theme import Palette, Metrics
+from PixelCanvas import *
+
+-- ============================================================================
+-- PixelReadout
+-- ============================================================================
+--
+-- One line of status under a pixel canvas: which pixel the pointer is on,
+-- plus whatever fixed text the owner adds (the image size, the tool). It
+-- reads the shared `PixelCursor` when it paints, so it keeps up with the
+-- pointer without anything rebuilding.
+
+export class PixelReadout extends View
+    cursor: PixelCursor
+    width: integer
+    height: integer
+    extra: string
+
+    fn init(
+        cursor: PixelCursor,
+        width: integer,
+        height: integer,
+        extra: string = "",
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.cursor = cursor
+        self.width = width
+        self.height = height
+        self.extra = extra
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.constrain(Size(constraints.biggest().width, 18.0))
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local c = self.cursor
+        local where = ""
+
+        if c.inside and c.x >= 0 and c.y >= 0 and c.x < self.width and c.y < self.height then
+            where = "x " .. c.x .. ", y " .. c.y .. "     "
+        end
+
+        local text = where .. self.width .. " × " .. self.height .. " pixels     " .. (c.zoom * 100) .. "%"
+
+        if self.extra != "" then
+            text = text .. "     " .. self.extra
+        end
+
+        TextStyle(color: Palette.textMuted, size: Metrics.smallFontSize).draw(text, x, y + 2.0)
+    end
+end

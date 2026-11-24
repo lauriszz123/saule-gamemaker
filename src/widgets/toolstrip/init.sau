@@ -1,0 +1,4 @@
+-- widgets/toolstrip — the row of icon buttons under the menu bar.
+
+export from ToolButton import *
+export from ToolStrip import *

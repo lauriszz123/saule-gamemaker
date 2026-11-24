@@ -1,0 +1,53 @@
+from uikit import Color
+
+-- ============================================================================
+-- MenuEntry
+-- ============================================================================
+--
+-- One row of a menu: a label, the shortcut shown beside it, an optional glyph
+-- and the action it runs. An entry with no action is drawn greyed out and
+-- can't be chosen, which is how "not built yet" shows in the menus.
+--
+--     MenuEntry("Save", shortcut: "Ctrl+S", action: () => save())
+--     MenuEntry.separator()
+
+export class MenuEntry
+    label: string
+    shortcut: string
+    glyph: integer?
+    glyphColor: Color?
+    action: (fn() -> nil)?
+    enabled: boolean
+    checked: boolean
+    separator: boolean
+
+    fn init(
+        label: string = "",
+        shortcut: string = "",
+        glyph: integer? = nil,
+        glyphColor: Color? = nil,
+        enabled: boolean = true,
+        checked: boolean = false,
+        separator: boolean = false,
+        action: (fn() -> nil)? = nil
+    )
+        self.label = label
+        self.shortcut = shortcut
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.action = action
+        self.enabled = enabled
+        self.checked = checked
+        self.separator = separator
+    end
+
+    -- The thin grooved line between groups of entries.
+    static fn separator() -> MenuEntry
+        return MenuEntry(separator: true)
+    end
+
+    -- Can this row be chosen right now?
+    fn isActive() -> boolean
+        return self.enabled and self.action != nil and not self.separator
+    end
+end

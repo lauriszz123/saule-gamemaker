@@ -1,0 +1,81 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from ResourceEditor import *
+from SpriteEditor import *
+from SpriteFramesEditor import *
+from ImageEditor import *
+from ObjectEditor import *
+from EventScriptEditor import *
+from RoomEditor import *
+from ScriptEditor import *
+from PendingEditor import *
+from GameInfoEditor import *
+from GameSettingsEditor import *
+
+-- ============================================================================
+-- DocumentContent
+-- ============================================================================
+--
+-- What goes inside an editor window: picks the right editor for the
+-- document. Adding an editor for a new kind is one line here.
+
+export class DocumentContent extends View
+    editor: Editor
+    document: Document
+
+    fn init(editor: Editor, document: Document, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.document = document
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local document = self.document
+
+        if document.kind == DocumentKind.GameInformation then
+            return GameInfoEditor(editor, document.id)
+        end
+
+        if document.kind == DocumentKind.GameSettings then
+            return GameSettingsEditor(editor, document.id)
+        end
+
+        if document.kind == DocumentKind.SpriteFrames then
+            return SpriteFramesEditor(editor, document.resourceId)
+        end
+
+        if document.kind == DocumentKind.SpriteImage then
+            return ImageEditor(editor, document.resourceId, document.part, document.id)
+        end
+
+        if document.kind == DocumentKind.EventScript then
+            return EventScriptEditor(editor, document.resourceId, document.part, document.id)
+        end
+
+        local resource = editor.project.find(document.resourceId)
+
+        if resource == nil then
+            return Label("This resource no longer exists.", color: Palette.textMuted).centered()
+        end
+
+        local kind = resource!.kind
+        local id = document.id
+
+        if kind == ResourceKind.Sprite then
+            return SpriteEditor(editor, resource!, id)
+        elseif kind == ResourceKind.Object then
+            return ObjectEditor(editor, resource!, id)
+        elseif kind == ResourceKind.Room then
+            return RoomEditor(editor, resource!, id)
+        elseif kind == ResourceKind.Script then
+            return ScriptEditor(editor, resource!, id)
+        end
+
+        return PendingEditor(editor, resource!, id)
+    end
+end

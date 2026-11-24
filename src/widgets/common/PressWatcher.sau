@@ -1,0 +1,58 @@
+from uikit import *
+
+-- ============================================================================
+-- PressWatcher
+-- ============================================================================
+--
+-- Hear about every press inside a subtree *without* taking it.
+--
+-- A press is normally claimed by the front-most view that wants it, and the
+-- views behind it never hear of it. That is wrong for an editor window: a
+-- click on a text field inside it has to bring the whole window to the front
+-- *and* still place the caret.
+--
+-- So a transparent `PressSpy` is laid over the child, in front of it. It sees
+-- the press first, reports it, and declines it, so the walk carries on into
+-- the child exactly as if the spy were not there.
+
+export class PressWatcher extends View
+    child: View?
+    onPress: fn() -> nil
+
+    fn init(onPress: fn() -> nil, child: View? = nil, key: string? = nil)
+        self.super(key)
+
+        self.onPress = onPress
+        self.child = claimed(child)
+    end
+
+    fn body(context: BuildContext) -> View
+        return ZStack(children: {self.child ?? Frame(), Positioned.fill(PressSpy(self.onPress))})
+    end
+end
+
+export class PressSpy extends View
+    onPress: fn() -> nil
+
+    fn init(onPress: fn() -> nil, key: string? = nil)
+        self.super(key)
+
+        self.onPress = onPress
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        if event.kind == PointerKind.Down and inside then
+            self.onPress()
+        end
+
+        -- Never claim: the press still belongs to whatever is underneath.
+        return false
+    end
+end

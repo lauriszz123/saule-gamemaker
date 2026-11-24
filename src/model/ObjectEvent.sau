@@ -1,0 +1,165 @@
+from EventKind import *
+from EventCatalog import *
+
+-- ============================================================================
+-- ObjectEvent
+-- ============================================================================
+--
+-- One event of an object, and the Saule code that runs when it happens.
+--
+-- Which event it is is the kind plus its detail (see `EventKind`), and for a
+-- collision the object it collides with. An object can't have the same
+-- event twice; `isSlot` is how that's checked.
+--
+-- Alarms carry settings of their own — how long they run, whether they
+-- repeat, whether they start by themselves. When and how alarms fire is up
+-- to the game's scripts; these are the defaults those scripts start from.
+
+export enum TimeUnit
+    Steps = "steps",
+    Seconds = "seconds"
+
+    fn title() -> string
+        return match self
+            case TimeUnit.Steps then "Steps"
+            case TimeUnit.Seconds then "Seconds"
+        end
+    end
+end
+
+export class AlarmSettings
+    -- How long the alarm runs before it fires, in `unit`s.
+    time: float
+    unit: TimeUnit
+
+    -- Start again by itself after firing — a fire rate, a spawn timer.
+    repeats: boolean
+
+    -- Start running as soon as the instance is created.
+    startOnCreate: boolean
+
+    fn init(
+        time: float = 30.0,
+        unit: TimeUnit = TimeUnit.Steps,
+        repeats: boolean = false,
+        startOnCreate: boolean = false
+    )
+        self.time = time
+        self.unit = unit
+        self.repeats = repeats
+        self.startOnCreate = startOnCreate
+    end
+
+    fn copy() -> AlarmSettings
+        return AlarmSettings(self.time, self.unit, self.repeats, self.startOnCreate)
+    end
+
+    -- "30 steps, repeats, starts on create"
+    fn summary() -> string
+        local text = AlarmSettings.number(self.time) .. " " .. String.lower(self.unit.title())
+
+        if self.repeats then
+            text = text .. ", repeats"
+        end
+
+        if self.startOnCreate then
+            text = text .. ", starts on create"
+        end
+
+        return text
+    end
+
+    -- A time without a pointless ".0": 30, 0.5.
+    static fn number(value: float) -> string
+        local whole = Math.floor(value) ?? 0
+
+        if (whole as float) == value then
+            return "" .. whole
+        end
+
+        return "" .. value
+    end
+end
+
+export class ObjectEvent
+    -- Unique within its object and never reused, so an open script window
+    -- can keep hold of its event while others come and go.
+    id: integer
+
+    kind: EventKind
+    detail: string
+
+    -- The other object, for a collision; 0 otherwise.
+    target: integer
+
+    code: string
+
+    -- Set only on alarms.
+    alarm: AlarmSettings?
+
+    fn init(kind: EventKind, detail: string = "", target: integer = 0, code: string = "")
+        self.id = 0
+        self.kind = kind
+        self.detail = detail
+        self.target = target
+        self.code = code
+
+        if kind == EventKind.Alarm then
+            self.alarm = AlarmSettings()
+        end
+    end
+
+    -- Is this the event (kind, detail, target)? Names are matched without
+    -- regard to case, so Alarm (shoot) and Alarm (Shoot) can't both exist.
+    fn isSlot(kind: EventKind, detail: string, target: integer) -> boolean
+        if self.kind != kind or self.target != target then
+            return false
+        end
+
+        return String.lower(self.detail) == String.lower(detail)
+    end
+
+    -- Does this event come before `other` in an object's list? By kind,
+    -- then by position in the kind's catalogue, then by name.
+    fn before(other: ObjectEvent) -> boolean
+        local a = self.kind.rank()
+        local b = other.kind.rank()
+
+        if a != b then
+            return a < b
+        end
+
+        local pa = EventCatalog.position(self.kind, self.detail)
+        local pb = EventCatalog.position(other.kind, other.detail)
+
+        if pa != pb then
+            return pa < pb
+        end
+
+        if self.target != other.target then
+            return self.target < other.target
+        end
+
+        local na = String.lower(self.detail)
+        local nb = String.lower(other.detail)
+
+        if na != nb then
+            return na < nb
+        end
+
+        return self.id < other.id
+    end
+
+    -- An independent copy with no id yet: what overriding an inherited
+    -- event starts from.
+    fn copy() -> ObjectEvent
+        local event = ObjectEvent(self.kind, self.detail, self.target, self.code)
+        local alarm = self.alarm
+
+        if alarm != nil then
+            event.alarm = alarm!.copy()
+        end
+
+        return event
+    end
+end

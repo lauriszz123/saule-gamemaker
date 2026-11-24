@@ -1,0 +1,464 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from util import Parse
+
+-- ============================================================================
+-- ImageEditor
+-- ============================================================================
+--
+-- Painting one subimage of a sprite, pixel by pixel.
+--
+--   ┌──────────────────────────────────────────────────────────────┐
+--   │ [undo][redo] | [−][+][fit][grid] | [clear]                   │
+--   ├────┬───────────────────────────────────────────┬─────────────┤
+--   │ ✎  │                                           │  ■ left      │
+--   │ ⌫  │          magnified pixels, grid,          │    ■ right   │
+--   │ ─  │          pointer pixel outlined           │  [#000000]   │
+--   │ □  │                                           │  palette     │
+--   │ ■  │                                           │  ▪▪▪▪▪▪      │
+--   │ ◢  │                                           │  ▪▪▪▪▪▪      │
+--   │ ⟟  │                                           │              │
+--   ├────┴───────────────────────────────────────────┴─────────────┤
+--   │ x 4, y 7     32 × 32 pixels     800%     Pencil              │
+--   └──────────────────────────────────────────────────────────────┘
+--
+-- The left mouse button paints with the left colour, the right button with
+-- the right one. The work itself — tools, colours, undo — is an
+-- `ImageSession` from the editor layer; this window keeps one for as long as
+-- it is open and draws it.
+--
+-- Pixels are edited in place, so the sprite's other views show the change as
+-- soon as a stroke ends.
+
+export class ImageEditor extends StatefulView
+    editor: Editor
+    resourceId: integer
+    frameId: integer
+    documentId: integer
+
+    fn init(
+        editor: Editor,
+        resourceId: integer,
+        frameId: integer,
+        documentId: integer,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.editor = editor
+        self.resourceId = resourceId
+        self.frameId = frameId
+        self.documentId = documentId
+    end
+
+    fn createState() -> State?
+        return ImageEditorState(self.editor, self.resourceId, self.frameId, self.documentId)
+    end
+end
+
+class ImageEditorState extends State
+    local editor: Editor
+    local resourceId: integer
+    local frameId: integer
+    local documentId: integer
+    local session: ImageSession?
+    local cursor: PixelCursor
+
+    -- The colours a new editor offers: greys, the classic sixteen, and some
+    -- softer tones for shading.
+    static local paletteColors: integer[] = {
+        0x00000000,
+        0xFF000000,
+        0xFF404040,
+        0xFF808080,
+        0xFFC0C0C0,
+        0xFFFFFFFF,
+        0xFF800000,
+        0xFFFF0000,
+        0xFFFF8080,
+        0xFF804000,
+        0xFFFF8000,
+        0xFFFFC080,
+        0xFF808000,
+        0xFFFFFF00,
+        0xFFFFFF80,
+        0xFF008000,
+        0xFF00FF00,
+        0xFF80FF80,
+        0xFF008080,
+        0xFF00FFFF,
+        0xFF80FFFF,
+        0xFF000080,
+        0xFF0000FF,
+        0xFF8080FF,
+        0xFF800080,
+        0xFFFF00FF,
+        0xFFFF80FF,
+        0xFF5A3A22,
+        0xFFA0703C,
+        0xFFE8C090,
+        0xFF2B5797,
+        0xFF3A9A4B,
+        0xFFE07B24,
+        0xFFC0392B,
+        0xFF8A56C9,
+        0xFF17938F,
+    }
+
+    fn init(editor: Editor, resourceId: integer, frameId: integer, documentId: integer)
+        self.super()
+
+        self.editor = editor
+        self.resourceId = resourceId
+        self.frameId = frameId
+        self.documentId = documentId
+        self.cursor = PixelCursor()
+
+        local frame = editor.spriteFrame(resourceId, frameId)
+        self.session = nil
+
+        if frame != nil then
+            self.session = ImageSession(frame!.image, frame!.width, frame!.height)
+        end
+    end
+
+    fn body(context: BuildContext) -> View
+        local session = self.session
+
+        if session == nil then
+            return Label("This subimage no longer exists.", color: Palette.textMuted).centered()
+        end
+
+        local s = session!
+
+        local layout = VStack(alignment: StackAlignment.Fill) do
+            show(self.toolStrip(s))
+
+            HStack(alignment: StackAlignment.Fill) do
+                show(self.toolColumn(s))
+                Rule(vertical: true, etched: true)
+                show(self.canvas(s).expanded())
+                Rule(vertical: true, etched: true)
+                show(self.colorColumn(s))
+            end.expanded()
+
+            Edges(
+                fill: Palette.chrome,
+                top: Palette.chromeEdge,
+                child: PixelReadout(self.cursor, s.width, s.height, s.tool.title()).padding(
+                    insets: EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0)
+                )
+            )
+        end
+
+        -- Shortcuts, only while this is the window in front: two image
+        -- editors open side by side must not both undo.
+        return KeyboardListener(onKeyDown: fn(event: KeyEvent)
+            return self.shortcut(s, event)
+        end, child: layout)
+    end
+
+    -- --- The three columns -------------------------------------------------------
+
+    local fn toolStrip(s: ImageSession) -> View
+        local zoomStep = fn(step: integer) -> nil
+            self.changeZoom(s, step)
+        end
+
+        return ToolStrip() do
+            ToolButton(
+                glyph: Icons.undo,
+                tooltip: "Undo  (Ctrl+Z)",
+                action: self.onlyIf(s.canUndo(), fn()
+                    self.undo(s)
+                end)
+            )
+            ToolButton(
+                glyph: Icons.redo,
+                tooltip: "Redo  (Ctrl+Y)",
+                action: self.onlyIf(s.canRedo(), fn()
+                    self.redo(s)
+                end)
+            )
+            ToolSeparator()
+            ToolButton(
+                glyph: Glyphs.zoomOut,
+                tooltip: "Zoom out  (wheel)",
+                action: () => zoomStep(-1)
+            )
+            ToolButton(glyph: Glyphs.zoomIn, tooltip: "Zoom in  (wheel)", action: () => zoomStep(1))
+            ToolButton(
+                glyph: Glyphs.zoomFit,
+                tooltip: "Fit to the window",
+                selected: s.zoom == 0,
+                action: fn()
+                    self.setState(fn()
+                        s.zoom = 0
+                    end)
+                end
+            )
+            ToolButton(
+                glyph: Glyphs.grid,
+                tooltip: "Show the pixel grid",
+                selected: s.showGrid,
+                action: fn()
+                    self.setState(fn()
+                        s.showGrid = not s.showGrid
+                    end)
+                end
+            )
+            ToolSeparator()
+            ToolButton(
+                glyph: Glyphs.clearImage,
+                tooltip: "Clear the image",
+                color: Palette.debug,
+                action: fn()
+                    s.clear()
+                    self.changed()
+                end
+            )
+        end
+    end
+
+    local fn toolColumn(s: ImageSession) -> View
+        local tools: View[] = {
+            self.toolButton(s, PaintTool.Pencil, Glyphs.pencil),
+            self.toolButton(s, PaintTool.Eraser, Glyphs.eraser),
+            self.toolButton(s, PaintTool.Line, Glyphs.line),
+            self.toolButton(s, PaintTool.Rectangle, Glyphs.rectangle),
+            self.toolButton(s, PaintTool.FilledRectangle, Glyphs.filledRectangle),
+            self.toolButton(s, PaintTool.Fill, Glyphs.fill),
+            self.toolButton(s, PaintTool.Picker, Glyphs.picker),
+        }
+
+        return VStack(alignment: StackAlignment.Center, spacing: 2.0, children: tools).padding(
+            insets: EdgeInsets.symmetric(horizontal: 5.0, vertical: 6.0)
+        ).background(Palette.chrome)
+    end
+
+    local fn toolButton(s: ImageSession, tool: PaintTool, glyph: integer) -> View
+        return ToolButton(
+            glyph: glyph,
+            tooltip: tool.title(),
+            selected: s.tool == tool,
+            action: fn()
+                self.setState(fn()
+                    s.tool = tool
+                end)
+            end
+        )
+    end
+
+    local fn canvas(s: ImageSession) -> View
+        local canvas = PixelCanvas(
+            region: ImageRegion.whole(s.image, s.width, s.height),
+            cursor: self.cursor,
+            zoom: s.zoom,
+            showGrid: s.showGrid,
+            onPress: fn(x: integer, y: integer, button: integer)
+                local tool = s.tool
+                s.press(x, y, button)
+
+                -- The picker changes a colour, which the colour column shows.
+                if tool == PaintTool.Picker then
+                    self.setState(fn()
+                    end)
+                end
+            end,
+            onDrag: fn(x: integer, y: integer)
+                s.drag(x, y)
+            end,
+            onRelease: fn()
+                if s.release() then
+                    self.changed()
+                end
+            end,
+            onZoom: fn(step: integer)
+                self.changeZoom(s, step)
+            end
+        )
+
+        return canvas.cursor("crosshair")
+    end
+
+    local fn colorColumn(s: ImageSession) -> View
+        local setLeft = fn(c: integer) -> nil
+            self.setState(fn()
+                s.leftColor = c
+            end)
+        end
+
+        local setRight = fn(c: integer) -> nil
+            self.setState(fn()
+                s.rightColor = c
+            end)
+        end
+
+        local swatches: View[] = {}
+
+        for argb in paletteColors do
+            swatches[#swatches + 1] = Swatch(argb: argb, onLeft: setLeft, onRight: setRight)
+        end
+
+        local recent: View[] = {}
+
+        for argb in self.editor.recentColors do
+            recent[#recent + 1] = Swatch(argb: argb, onLeft: setLeft, onRight: setRight)
+        end
+
+        local pair = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            ColorPair(
+                left: s.leftColor,
+                right: s.rightColor,
+                onLeft: () => self.choose("Left Colour", s.leftColor, setLeft),
+                onRight: () => self.choose("Right Colour", s.rightColor, setRight)
+            )
+            Spacer()
+            ToolButton(glyph: Glyphs.swap, tooltip: "Swap the two colours", action: fn()
+                self.setState(fn()
+                    local left = s.leftColor
+                    s.leftColor = s.rightColor
+                    s.rightColor = left
+                end)
+            end)
+        end
+
+        local column = VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            Label("Colours", size: Metrics.smallFontSize)
+            show(pair)
+
+            PushButton(label: "Choose colour...", glyph: Glyphs.palette, glyphColor: Palette.info) do
+                self.choose("Left Colour", s.leftColor, setLeft)
+            end
+
+            self.hexRow("Left:", s.leftColor, fn(c: integer)
+                s.leftColor = c
+            end)
+            self.hexRow("Right:", s.rightColor, fn(c: integer)
+                s.rightColor = c
+            end)
+
+            Rule(etched: true)
+            Label("Palette", size: Metrics.smallFontSize)
+            FlowStack(spacing: 3.0, runSpacing: 3.0, children: swatches)
+
+            if #recent > 0 then
+                Label("Recent", size: Metrics.smallFontSize)
+                FlowStack(spacing: 3.0, runSpacing: 3.0, children: recent)
+            end
+
+            Spacer()
+            Text(
+                "Left click paints with the left colour, right click with the right. Click a colour square to choose a new one.",
+                style: TextStyle(color: Palette.textMuted, size: Metrics.smallFontSize)
+            )
+        end
+
+        return column.padding(8.0).frame(width: 168.0).background(Palette.chrome)
+    end
+
+    -- Open the colour picker for one of the two slots. A colour picked there
+    -- also joins the recent ones.
+    local fn choose(title: string, current: integer, set: fn(integer) -> nil) -> nil
+        local context = self.context()
+
+        if context == nil then
+            return
+        end
+
+        openColorPicker(context!, title: title, color: current) do (argb: integer)
+            self.editor.rememberColor(argb)
+            set(argb)
+        end
+    end
+
+    -- "Left: [#FF8800]" — type a colour in hex. Six digits are opaque, eight
+    -- include alpha.
+    local fn hexRow(label: string, argb: integer, set: fn(integer) -> nil) -> View
+        return FormRow(
+            label: label,
+            labelWidth: 40.0,
+            child: Field(value: Argb.hex(argb)) do (text: string)
+                local digits = Parse.hex(text)
+                local count = String.len(String.trim(text))
+
+                if String.starts(String.trim(text), "#") then
+                    count -= 1
+                end
+
+                if digits != nil and (count == 6 or count == 8) then
+                    self.setState(fn()
+                        set(Argb.parse(digits!, count))
+                    end)
+                end
+            end
+        )
+    end
+
+    -- --- Actions --------------------------------------------------------------------
+
+    local fn undo(s: ImageSession) -> nil
+        if s.undo() then
+            self.changed()
+        end
+    end
+
+    local fn redo(s: ImageSession) -> nil
+        if s.redo() then
+            self.changed()
+        end
+    end
+
+    -- Step the zoom through whole magnifications. From "fit", start at
+    -- whatever fit worked out to.
+    local fn changeZoom(s: ImageSession, step: integer) -> nil
+        local current = s.zoom
+        if current == 0 then
+            current = self.cursor.zoom
+        end
+
+        self.setState(fn()
+            s.zoom = Math.clamp(current + step * Math.max(1, current / 4), 1, 48)
+        end)
+    end
+
+    -- The pixels changed: let the rest of the editor redraw (thumbnails, the
+    -- sprite's preview) — which also rebuilds this window, so undo and redo
+    -- light up.
+    local fn changed() -> nil
+        self.editor.spriteImageChanged()
+    end
+
+    local fn shortcut(s: ImageSession, event: KeyEvent) -> boolean
+        local front = self.editor.workspace.active()
+
+        if front == nil or front!.id != self.documentId or not event.command() then
+            return false
+        end
+
+        if event.key == "z" and not event.shift then
+            self.undo(s)
+
+            return true
+        end
+
+        if event.key == "y" or (event.key == "z" and event.shift) then
+            self.redo(s)
+
+            return true
+        end
+
+        return false
+    end
+
+    local fn onlyIf(enabled: boolean, action: fn() -> nil) -> (fn() -> nil)?
+        if enabled then
+            return action
+        end
+
+        return nil
+    end
+end

@@ -1,0 +1,120 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+from MdiFrame import *
+from MdiTitleBar import *
+from ResizeGrip import *
+
+-- ============================================================================
+-- MdiWindow
+-- ============================================================================
+--
+-- A child window inside the workspace: title bar on top, content below, a
+-- resize grip in the corner, a frame and a shadow round the whole thing.
+--
+-- Only the focused window is drawn at full strength; the others are washed
+-- out (see `Tint`). A press *anywhere* in the window brings it to the front — including on a
+-- control inside it, which still gets the press as well. That is what the
+-- `PressWatcher` round the outside is for.
+
+export class MdiWindow extends View
+    frame: MdiFrame
+    onActivate: fn() -> nil
+    onMove: fn(float, float) -> nil
+    onResize: fn(float, float) -> nil
+    onMinimize: fn() -> nil
+    onMaximize: fn() -> nil
+    onClose: fn() -> nil
+
+    fn init(
+        frame: MdiFrame,
+        onActivate: fn() -> nil,
+        onMove: fn(float, float) -> nil,
+        onResize: fn(float, float) -> nil,
+        onMinimize: fn() -> nil,
+        onMaximize: fn() -> nil,
+        onClose: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.frame = frame
+        self.onActivate = onActivate
+        self.onMove = onMove
+        self.onResize = onResize
+        self.onMinimize = onMinimize
+        self.onMaximize = onMaximize
+        self.onClose = onClose
+    end
+
+    fn body(context: BuildContext) -> View
+        local frame = self.frame
+
+        local bar = MdiTitleBar(
+            title: frame.title,
+            glyph: frame.glyph,
+            glyphColor: frame.glyphColor,
+            active: frame.active,
+            maximized: frame.maximized,
+            minimized: frame.minimized,
+            onMove: self.onMove,
+            onMinimize: self.onMinimize,
+            onMaximize: self.onMaximize,
+            onClose: self.onClose
+        )
+
+        -- Minimised, a window is only its title bar.
+        if frame.minimized then
+            return self.framed(bar)
+        end
+
+        -- A window that isn't focused is washed out, but stays live: hovering
+        -- its visible parts still highlights them.
+        local wash: Color? = nil
+        if not frame.active then
+            wash = Palette.inactiveWash
+        end
+
+        local body = Edges(
+            fill: Palette.chrome,
+            child: Tint(color: wash, child: (frame.content ?? Frame()).clipped())
+        )
+
+        local column = VStack(alignment: StackAlignment.Fill) do
+            show(bar)
+            body.expanded()
+        end
+
+        if frame.maximized then
+            return self.framed(column)
+        end
+
+        local withGrip = ZStack(
+            children: {
+                column,
+                Positioned(
+                    right: 1.0,
+                    bottom: 1.0,
+                    width: 14.0,
+                    height: 14.0,
+                    child: ResizeGrip(self.onResize)
+                ),
+            }
+        )
+
+        return self.framed(withGrip)
+    end
+
+    -- Border, shadow, and bring-to-front on press.
+    local fn framed(inner: View) -> View
+        local edge = Palette.windowFrame
+        if not self.frame.active then
+            edge = Palette.bevelShadow
+        end
+
+        return PressWatcher(
+            onPress: self.onActivate,
+            child: DropShadow(child: Edges.box(inner.padding(1.0), edge))
+        )
+    end
+end

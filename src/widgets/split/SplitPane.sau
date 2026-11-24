@@ -1,0 +1,137 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+
+-- ============================================================================
+-- SplitPane
+-- ============================================================================
+--
+-- Two panes side by side with a draggable bar between them. The leading
+-- pane has a width you can drag; the trailing one takes the rest. In a
+-- narrow window the leading pane gives way: it never takes more than half,
+-- so the trailing one is always there too.
+--
+--     SplitPane(leading: resourceTree, trailing: workspace, initial: 240.0)
+--
+-- The width lives in the pane's element state, so it survives every rebuild
+-- of what is inside it.
+
+export class SplitPane extends View
+    leading: View?
+    trailing: View?
+    initial: float
+    minimum: float
+    maximum: float
+
+    fn init(
+        leading: View? = nil,
+        trailing: View? = nil,
+        initial: float = 240.0,
+        minimum: float = 140.0,
+        maximum: float = 600.0,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.leading = claimed(leading)
+        self.trailing = claimed(trailing)
+        self.initial = initial
+        self.minimum = minimum
+        self.maximum = maximum
+    end
+
+    fn body(context: BuildContext) -> View
+        local width = context.state("width", self.initial)
+
+        local bar = Splitter(onDrag: fn(dx: float)
+            local next = atMost(atLeast(width.number() + dx, self.minimum), self.maximum)
+
+            width.set(next)
+        end)
+
+        local leading = self.leading ?? Frame()
+        local trailing = self.trailing ?? Frame()
+
+        return SplitLayout(width.number(self.initial), leading, bar, trailing)
+    end
+end
+
+-- Lays the split out: the leading pane at `width`, but at most half of the
+-- room; then the bar; then the trailing pane in whatever is left.
+export class SplitLayout extends View
+    width: float
+    children: View[]
+
+    fn init(width: float, leading: View, bar: View, trailing: View, key: string? = nil)
+        self.super(key)
+
+        self.width = width
+        self.children = claimedAll({leading, bar, trailing})
+    end
+
+    fn childViews() -> table<View>
+        return self.children
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        local size = constraints.biggest()
+        local leading = el.childAt(1)
+        local bar = el.childAt(2)
+        local trailing = el.childAt(3)
+
+        if leading == nil or bar == nil or trailing == nil then
+            return size
+        end
+
+        local barSize = bar!.layout(Constraints(0.0, size.width, size.height, size.height))
+        local room = Math.max(size.width - barSize.width, 0.0)
+        local width = Math.min(self.width, room / 2.0)
+
+        leading!.layout(Constraints.tight(Size(width, size.height)))
+        leading!.offset = Offset.zero()
+
+        bar!.offset = Offset(width, 0.0)
+
+        trailing!.layout(Constraints.tight(Size(room - width, size.height)))
+        trailing!.offset = Offset(width + barSize.width, 0.0)
+
+        return size
+    end
+end
+
+-- The bar itself. Reports how far it was dragged since the last report.
+--
+-- `onDragTo` gives the pointer in the bar's own coordinates. The bar moves
+-- along with the drag, so "where the pointer is now, minus where on the bar
+-- it was grabbed" is exactly the distance still to move.
+export class Splitter extends View
+    onDrag: fn(float) -> nil
+
+    fn init(onDrag: fn(float) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.onDrag = onDrag
+    end
+
+    fn body(context: BuildContext) -> View
+        local scratch = context.data().scratch
+
+        local face = Edges(
+            fill: Palette.chrome,
+            left: Palette.bevelLight,
+            right: Palette.chromeEdge,
+            child: Frame(width: Metrics.splitterWidth)
+        )
+
+        return GestureArea(child: face, onTapAt: fn(x: float, y: float)
+            scratch.grab = x
+        end, onDragTo: fn(x: float, y: float)
+            local grab = (scratch.grab as float?) ?? 0.0
+            local dx = x - grab
+
+            if dx != 0.0 then
+                self.onDrag(dx)
+            end
+        end).cursor("resizeleftright")
+    end
+end

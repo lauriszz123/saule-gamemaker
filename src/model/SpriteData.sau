@@ -1,0 +1,131 @@
+from SpriteFrame import *
+
+-- ============================================================================
+-- SpriteData
+-- ============================================================================
+--
+-- What a sprite holds: its subimages, its origin, and how it collides.
+--
+-- The origin is the pixel that sits on an instance's (x, y) — where the
+-- sprite is "held". The default, (0, 0), is the top-left corner.
+
+export class SpriteData
+    frames: SpriteFrame[]
+    originX: integer
+    originY: integer
+
+    -- Collide on the actual pixels rather than the bounding box.
+    preciseCollision: boolean
+
+    -- One collision mask per subimage instead of one for the whole sprite.
+    separateMasks: boolean
+
+    local nextFrameId: integer
+
+    fn init()
+        self.frames = {}
+        self.originX = 0
+        self.originY = 0
+        self.preciseCollision = true
+        self.separateMasks = false
+        self.nextFrameId = 1
+    end
+
+    fn count() -> integer
+        return #self.frames
+    end
+
+    -- A sprite's size is its first frame's; every subimage is meant to
+    -- match it.
+    fn width() -> integer
+        if #self.frames == 0 then
+            return 0
+        end
+
+        return self.frames[1].width
+    end
+
+    fn height() -> integer
+        if #self.frames == 0 then
+            return 0
+        end
+
+        return self.frames[1].height
+    end
+
+    fn frame(index: integer) -> SpriteFrame?
+        if index < 1 or index > #self.frames then
+            return nil
+        end
+
+        return self.frames[index]
+    end
+
+    fn centerOrigin() -> nil
+        self.originX = self.width() / 2
+        self.originY = self.height() / 2
+    end
+
+    -- --- Editing the frame list ------------------------------------------------
+
+    fn append(frames: SpriteFrame[]) -> nil
+        for frame in frames do
+            self.adopt(frame)
+            self.frames[#self.frames + 1] = frame
+        end
+    end
+
+    -- The frame with this id, and where it is, or nil and 0.
+    fn find(id: integer) -> (SpriteFrame?, integer)
+        for i = 1, #self.frames do
+            if self.frames[i].id == id then
+                return self.frames[i], i
+            end
+        end
+
+        return nil, 0
+    end
+
+    local fn adopt(frame: SpriteFrame) -> nil
+        frame.id = self.nextFrameId
+        self.nextFrameId += 1
+    end
+
+    fn replace(frames: SpriteFrame[]) -> nil
+        self.frames = {}
+        self.append(frames)
+    end
+
+    fn remove(index: integer) -> nil
+        if self.frame(index) != nil then
+            Table.remove(self.frames, index)
+        end
+    end
+
+    -- Put a copy of a frame straight after it.
+    fn duplicate(index: integer) -> nil
+        local frame = self.frame(index)
+
+        if frame != nil then
+            local copy = frame!.copy()
+            self.adopt(copy)
+            Table.insert(self.frames, copy, index + 1)
+        end
+    end
+
+    -- Swap a frame with its neighbour; `delta` is -1 (left) or +1 (right).
+    -- Returns where the frame ended up.
+    fn move(index: integer, delta: integer) -> integer
+        local target = index + delta
+
+        if self.frame(index) == nil or self.frame(target) == nil then
+            return index
+        end
+
+        local moving = self.frames[index]
+        self.frames[index] = self.frames[target]
+        self.frames[target] = moving
+
+        return target
+    end
+end

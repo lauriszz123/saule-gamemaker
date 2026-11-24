@@ -1,0 +1,124 @@
+-- ============================================================================
+-- FileEntry and Paths
+-- ============================================================================
+--
+-- What a file dialog lists, and the path arithmetic it needs. Kept apart from
+-- the dialog's view so the listing rules — folders first, hidden files left
+-- out, only the wanted extensions — are in one readable place.
+
+export class FileEntry
+    name: string
+    isFolder: boolean
+
+    fn init(name: string, isFolder: boolean)
+        self.name = name
+        self.isFolder = isFolder
+    end
+end
+
+export class Paths
+    static fn join(folder: string, name: string) -> string
+        if String.ends(folder, "/") then
+            return folder .. name
+        end
+
+        return folder .. "/" .. name
+    end
+
+    -- The folder above, or the path itself at the root.
+    static fn parent(path: string) -> string
+        local found = String.match(path, "^(.*)/[^/]+/?$")
+
+        if found == nil then
+            return path
+        end
+
+        if found![1] == "" then
+            return "/"
+        end
+
+        return found![1]
+    end
+
+    static fn isFolder(path: string) -> boolean
+        local info = Os.fsInfo(path)
+
+        if info == nil then
+            return false
+        end
+
+        -- `match`, not `==`: in Saule 26.30 `Os.fsInfo` built a fresh
+        -- variant each call, so `kind == FsKind.Dir` was always false.
+        -- Fixed after 26.30; `match` works on both.
+        return match info!.kind
+            case FsKind.Dir then true
+            case _ then false
+        end
+    end
+
+    -- A path cut down to its last `limit` characters, for showing in a box
+    -- too narrow for all of it: the end of a path is the part that matters.
+    static fn shorten(path: string, limit: integer = 64) -> string
+        local length = String.len(path)
+
+        if length <= limit then
+            return path
+        end
+
+        return "…" .. String.sub(path, length - limit + 2)
+    end
+
+    static fn home() -> string
+        return Os.getenv("HOME") ?? "/"
+    end
+
+    -- Does `name` end in one of `extensions` (".png")? An empty list allows
+    -- everything.
+    static fn matches(name: string, extensions: string[]) -> boolean
+        if #extensions == 0 then
+            return true
+        end
+
+        local lower = String.lower(name)
+
+        for extension in extensions do
+            if String.ends(lower, String.lower(extension)) then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- A folder's contents: subfolders first, then the matching files, each
+    -- sorted by name ignoring case. Hidden entries are left out, and an
+    -- unreadable folder is simply empty.
+    static fn list(folder: string, extensions: string[]) -> FileEntry[]
+        local entries: FileEntry[] = {}
+
+        -- `Os.list` ends the program on a path it can't read, so check first.
+        if not Paths.isFolder(folder) then
+            return entries
+        end
+
+        for name in Os.list(folder) do
+            if not String.starts(name, ".") then
+                local isFolder = Paths.isFolder(Paths.join(folder, name))
+
+                if isFolder or Paths.matches(name, extensions) then
+                    entries[#entries + 1] = FileEntry(name, isFolder)
+                end
+            end
+        end
+
+        Table.sort(entries, fn(a: FileEntry, b: FileEntry) -> boolean
+            if a.isFolder != b.isFolder then
+                return a.isFolder
+            end
+
+            return String.lower(a.name) < String.lower(b.name)
+        end)
+
+        return entries
+    end
+end

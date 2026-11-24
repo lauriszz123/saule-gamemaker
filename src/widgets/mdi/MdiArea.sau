@@ -1,0 +1,317 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette, Metrics
+from MdiFrame import *
+from MdiWindow import *
+
+-- ============================================================================
+-- MdiArea
+-- ============================================================================
+--
+-- The workspace: a backdrop with child windows floating over it, the way a
+-- desktop "multiple document interface" works. Frames are drawn in list
+-- order, so the last frame is the one on top.
+--
+--     MdiArea(
+--         frames: frames,
+--         geometry: fn(id) … end,          -- where a window is *right now*
+--         relayout: handle,                -- poke it when one moved
+--         onActivate: fn(id) … end,
+--         onMove: fn(id, dx, dy) … end,
+--         onFit: fn(id, rect) … end,       -- it had to move it to fit
+--         …
+--     )
+--
+-- Like the tree, it is controlled: it draws the frames it is given and
+-- reports what the user did.
+--
+-- **Moving a window does not rebuild anything.** Which windows exist, their
+-- titles and their contents come in as `frames` and change rarely; where each
+-- one sits is asked of `geometry` at *layout* time. So a drag is: the owner
+-- updates its numbers, calls `relayout.relayout()`, and the next frame places
+-- the same window elements somewhere else. Rebuilding every editor inside
+-- every window on each step of a drag is what made dragging chug.
+--
+-- **A window always fits.** When the area shrinks — the app's own window
+-- was made smaller — a window that would end up out of sight is pulled
+-- back in, and one bigger than the area is cut down to it. The area says
+-- so through `onFit`, so the owner can keep the new place: otherwise the
+-- next drag would start from where the window was before.
+
+export class MdiArea extends View
+    frames: MdiFrame[]
+    geometry: (fn(string) -> Rect?)?
+    relayout: MdiRelayout?
+    onActivate: fn(string) -> nil
+    onMove: fn(string, float, float) -> nil
+    onResize: fn(string, float, float) -> nil
+    onMinimize: fn(string) -> nil
+    onMaximize: fn(string) -> nil
+    onClose: fn(string) -> nil
+    onBackdropMenu: fn(float, float) -> nil
+    onFit: fn(string, Rect) -> nil
+
+    fn init(
+        frames: MdiFrame[],
+        geometry: (fn(string) -> Rect?)? = nil,
+        relayout: MdiRelayout? = nil,
+        onActivate: fn(string) -> nil = (id: string) => nil,
+        onMove: fn(string, float, float) -> nil = (id: string, dx: float, dy: float) => nil,
+        onResize: fn(string, float, float) -> nil = (id: string, dx: float, dy: float) => nil,
+        onMinimize: fn(string) -> nil = (id: string) => nil,
+        onMaximize: fn(string) -> nil = (id: string) => nil,
+        onClose: fn(string) -> nil = (id: string) => nil,
+        onBackdropMenu: fn(float, float) -> nil = (x: float, y: float) => nil,
+        onFit: fn(string, Rect) -> nil = (id: string, rect: Rect) => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.frames = frames
+        self.geometry = geometry
+        self.relayout = relayout
+        self.onActivate = onActivate
+        self.onMove = onMove
+        self.onResize = onResize
+        self.onMinimize = onMinimize
+        self.onMaximize = onMaximize
+        self.onClose = onClose
+        self.onBackdropMenu = onBackdropMenu
+        self.onFit = onFit
+    end
+
+    fn body(context: BuildContext) -> View
+        local backdrop = GestureArea(child: Backdrop(), onSecondaryTapAt: fn(x: float, y: float)
+            local origin = absoluteOf(context.element())
+
+            self.onBackdropMenu(origin.dx + x, origin.dy + y)
+        end)
+
+        local windows: View[] = {}
+
+        for frame in self.frames do
+            windows[#windows + 1] = self.windowFor(frame)
+        end
+
+        return MdiLayout(
+            frames: self.frames,
+            backdrop: backdrop,
+            windows: windows,
+            geometry: self.geometry,
+            relayout: self.relayout,
+            onFit: self.onFit
+        ).clipped()
+    end
+
+    local fn windowFor(frame: MdiFrame) -> View
+        local id = frame.id
+
+        return MdiWindow(frame: frame, onActivate: fn()
+            self.onActivate(id)
+        end, onMove: fn(dx: float, dy: float)
+            self.onMove(id, dx, dy)
+        end, onResize: fn(dx: float, dy: float)
+            self.onResize(id, dx, dy)
+        end, onMinimize: fn()
+            self.onMinimize(id)
+        end, onMaximize: fn()
+            self.onMaximize(id)
+        end, onClose: fn()
+            self.onClose(id)
+        end, key: id)
+    end
+end
+
+-- ============================================================================
+-- MdiRelayout
+-- ============================================================================
+--
+-- The handle an owner keeps to say "a window moved — place them again". The
+-- area hands its layout element to it; `relayout` marks that element for
+-- layout and asks for a repaint, which is all a move needs.
+
+export class MdiRelayout
+    local element: Element?
+
+    fn init()
+        self.element = nil
+    end
+
+    fn attach(element: Element) -> nil
+        self.element = element
+    end
+
+    fn relayout() -> nil
+        local element = self.element
+
+        if element != nil then
+            element!.markNeedsLayout()
+            Repaint.request()
+        end
+    end
+end
+
+-- ============================================================================
+-- MdiLayout
+-- ============================================================================
+--
+-- Places the backdrop and the windows. A render view rather than a `ZStack`
+-- of `Positioned`s because a `Positioned` bakes its numbers in when it is
+-- built; this reads them when it lays out.
+
+export class MdiLayout extends View
+    frames: MdiFrame[]
+    children: View[]
+    geometry: (fn(string) -> Rect?)?
+    relayout: MdiRelayout?
+    onFit: fn(string, Rect) -> nil
+
+    fn init(
+        frames: MdiFrame[],
+        backdrop: View,
+        windows: View[],
+        geometry: (fn(string) -> Rect?)? = nil,
+        relayout: MdiRelayout? = nil,
+        onFit: fn(string, Rect) -> nil = (id: string, rect: Rect) => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.frames = frames
+        self.geometry = geometry
+        self.relayout = relayout
+        self.onFit = onFit
+
+        local all: View[] = {backdrop}
+        for window in windows do
+            all[#all + 1] = window
+        end
+
+        self.children = claimedAll(all)
+    end
+
+    fn childViews() -> table<View>
+        return self.children
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        self.relayout?.attach(el)
+
+        local size = constraints.biggest()
+
+        -- The backdrop fills the area.
+        local backdrop = el.childAt(1)
+        if backdrop != nil then
+            backdrop!.layout(Constraints.tight(size))
+            backdrop!.offset = Offset.zero()
+        end
+
+        -- The area changed size since last time (or this is the first
+        -- time): every window is pulled fully inside it, not just in reach.
+        local scratch = el.data.scratch
+        local resized = size.width != (scratch.width as float?) or size.height != (scratch.height as float?)
+        scratch.width = size.width
+        scratch.height = size.height
+
+        -- Minimised windows line up along the bottom edge, left to right.
+        local parked = 0
+
+        for i = 1, #self.frames do
+            local child = el.childAt(i + 1)
+
+            if child != nil then
+                local frame = self.frames[i]
+                local rect = self.placeOf(frame, size, parked)
+
+                if frame.minimized then
+                    parked += 1
+                elseif not frame.maximized then
+                    local fitted = MdiLayout.fit(rect, size, resized)
+
+                    if not MdiLayout.same(fitted, rect) then
+                        self.onFit(frame.id, fitted)
+                        rect = fitted
+                    end
+                end
+
+                child!.layout(Constraints.tight(Size(rect.width, rect.height)))
+                child!.offset = Offset(rect.x, rect.y)
+            end
+        end
+
+        return size
+    end
+
+    local fn placeOf(frame: MdiFrame, area: Size, parked: integer) -> Rect
+        if frame.minimized then
+            local height = Metrics.titleBarHeight + 2.0
+
+            return Rect(
+                (parked as float) * (Metrics.minimizedWidth + 2.0),
+                area.height - height,
+                Metrics.minimizedWidth,
+                height
+            )
+        end
+
+        if frame.maximized then
+            return Rect(0.0, 0.0, area.width, area.height)
+        end
+
+        local live: Rect? = nil
+        local geometry = self.geometry
+        if geometry != nil then
+            live = geometry!(frame.id)
+        end
+
+        return live ?? Rect(frame.x, frame.y, frame.width, frame.height)
+    end
+
+    -- How much of a window's title bar is always left on screen.
+    static reach: float = 60.0
+
+    -- `rect` made to fit in `area`: no bigger than it, and with enough of
+    -- its title bar showing to grab. With `inside`, all of it in the area.
+    static fn fit(rect: Rect, area: Size, inside: boolean) -> Rect
+        if area.width <= 0.0 or area.height <= 0.0 then
+            return rect
+        end
+
+        local width = Math.min(rect.width, area.width)
+        local height = Math.min(rect.height, area.height)
+        local x = rect.x
+        local y = rect.y
+
+        if inside then
+            x = Math.max(Math.min(x, area.width - width), 0.0)
+            y = Math.max(Math.min(y, area.height - height), 0.0)
+        else
+            x = Math.min(x, area.width - MdiLayout.reach)
+            y = Math.min(y, area.height - Metrics.titleBarHeight)
+        end
+
+        return Rect(x, y, width, height)
+    end
+
+    static fn same(a: Rect, b: Rect) -> boolean
+        return a.x == b.x and a.y == b.y and a.width == b.width and a.height == b.height
+    end
+end
+
+-- The empty workspace: one flat colour. It used to carry a diagonal hatch,
+-- but that was some sixty antialiased lines across the whole area on every
+-- repaint — a third of each frame's paint time while dragging.
+export class Backdrop extends View
+    fn init(key: string? = nil)
+        self.super(key)
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        Palette.workspace.apply()
+        Graphics.rectangle("fill", x, y, el.size.width, el.size.height)
+    end
+end

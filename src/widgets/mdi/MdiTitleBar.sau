@@ -1,0 +1,156 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+
+-- ============================================================================
+-- MdiTitleBar
+-- ============================================================================
+--
+-- The strip across the top of a child window: its glyph and title, and the
+-- minimise / maximise / close buttons. Dragging it moves the window, and
+-- double-clicking it maximises or restores.
+--
+-- Movement is reported as a delta. The bar travels with the window, so the
+-- pointer's position *on the bar* minus where the bar was grabbed is how far
+-- the window still has to go.
+
+export class MdiTitleBar extends View
+    title: string
+    glyph: integer
+    glyphColor: Color?
+    active: boolean
+    maximized: boolean
+    minimized: boolean
+    onMove: fn(float, float) -> nil
+    onMinimize: fn() -> nil
+    onMaximize: fn() -> nil
+    onClose: fn() -> nil
+
+    fn init(
+        title: string,
+        glyph: integer,
+        glyphColor: Color?,
+        active: boolean,
+        maximized: boolean,
+        minimized: boolean,
+        onMove: fn(float, float) -> nil,
+        onMinimize: fn() -> nil,
+        onMaximize: fn() -> nil,
+        onClose: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.title = title
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.active = active
+        self.maximized = maximized
+        self.minimized = minimized
+        self.onMove = onMove
+        self.onMinimize = onMinimize
+        self.onMaximize = onMaximize
+        self.onClose = onClose
+    end
+
+    fn body(context: BuildContext) -> View
+        local scratch = context.data().scratch
+
+        local fill = Palette.titleInactive
+        local ink = Palette.titleTextInactive
+
+        if self.active then
+            fill = Palette.titleActive
+            ink = Palette.titleText
+        end
+
+        -- Restore while maximised or minimised, maximise otherwise.
+        local sizeGlyph = Glyphs.maximize
+        if self.maximized or self.minimized then
+            sizeGlyph = Glyphs.restore
+        end
+
+        local row = HStack(alignment: StackAlignment.Center, spacing: 4.0) do
+            Frame(width: 4.0)
+            Icon(self.glyph, Metrics.iconSize, ink)
+            Frame(width: 2.0)
+            Label(self.title, color: ink).expanded()
+
+            if not self.minimized then
+                CaptionButton(Glyphs.minimize, ink, false, self.onMinimize)
+            end
+
+            CaptionButton(sizeGlyph, ink, false, self.onMaximize)
+            CaptionButton(Glyphs.close, ink, true, self.onClose)
+            Frame(width: 2.0)
+        end
+
+        return GestureArea(
+            child: Surface(color: fill, child: row).frame(height: Metrics.titleBarHeight),
+            onTapAt: fn(x: float, y: float)
+                scratch.grabX = x
+                scratch.grabY = y
+            end,
+            onDragTo: fn(x: float, y: float)
+                if self.maximized or self.minimized then
+                    return
+                end
+
+                local dx = x - ((scratch.grabX as float?) ?? 0.0)
+                local dy = y - ((scratch.grabY as float?) ?? 0.0)
+
+                if dx != 0.0 or dy != 0.0 then
+                    self.onMove(dx, dy)
+                end
+            end,
+            onDoubleTapAt: fn(x: float, y: float)
+                self.onMaximize()
+            end
+        )
+    end
+end
+
+-- One of the small buttons at the right end of a title bar.
+export class CaptionButton extends View
+    glyph: integer
+    ink: Color
+    danger: boolean
+    action: fn() -> nil
+
+    fn init(glyph: integer, ink: Color, danger: boolean, action: fn() -> nil, key: string? = nil)
+        self.super(key)
+
+        self.glyph = glyph
+        self.ink = ink
+        self.danger = danger
+        self.action = action
+    end
+
+    fn body(context: BuildContext) -> View
+        local data = context.data()
+
+        local fill: Color? = nil
+        local ink = self.ink
+
+        if data.hovered then
+            if self.danger then
+                fill = Color.hex(0xE81123)
+                ink = Palette.titleText
+            else
+                fill = Palette.bevelLight.withAlpha(0.25)
+            end
+        end
+
+        return GestureArea(
+            child: Surface(color: fill, radius: 2.0, child: Icon(self.glyph, 15.0, ink).centered()).frame(
+                width: 24.0,
+                height: Metrics.titleBarHeight - 6.0
+            ),
+            onHover: fn(inside: boolean)
+                data.hovered = inside
+                context.markNeedsBuild()
+            end,
+            onTap: self.action
+        )
+    end
+end

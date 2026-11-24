@@ -1,0 +1,3 @@
+-- views/resources — the resource tree down the left of the main window.
+
+export from ResourceTreePanel import *

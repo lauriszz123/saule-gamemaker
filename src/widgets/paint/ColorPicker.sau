@@ -1,0 +1,288 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from widgets.form import *
+from widgets.dialogs.DialogFrame import *
+from widgets.preview.Checkerboard import *
+from util import Parse
+from Argb import *
+from Hsv import *
+from ColorFields import *
+from Swatch import *
+
+-- ============================================================================
+-- openColorPicker
+-- ============================================================================
+--
+-- Ask for any colour, not just one from a palette. Opens a modal picker over
+-- everything and calls `onPick` with the colour chosen (`0xAARRGGBB`);
+-- cancelling calls nothing.
+--
+--     openColorPicker(context, color: s.leftColor) do (argb: integer)
+--         s.leftColor = argb
+--     end
+--
+--   ┌─ Choose Colour ─────────────────────────────────────── × ┐
+--   │ ┌──────────────────┐ ┌─┐  Old   New                     │
+--   │ │                  │ │ │  ┌─────┬─────┐                 │
+--   │ │                  │ │ │  └─────┴─────┘                 │
+--   │ │  saturation →    │ │h│  Hex   [#F0B828]               │
+--   │ │  ↓ brightness    │ │u│  Red   [240]                   │
+--   │ │                  │ │e│  Green [184]                   │
+--   │ │                  │ │ │  Blue  [ 40]                   │
+--   │ └──────────────────┘ └─┘  Alpha [255]                   │
+--   │ Opacity ░░░░░░░░░░░░░░░░░░░░▓▓▓▓▓▓▓▓                    │
+--   │                                       [ OK ] [Cancel]    │
+--   └──────────────────────────────────────────────────────────┘
+
+export fn openColorPicker(
+    context: BuildContext,
+    title: string = "Choose Colour",
+    color: integer = 0xFF000000,
+    onPick: fn(integer) -> nil = (argb: integer) => nil
+) -> OverlayHandle?
+    local owner = context.owner()
+
+    if owner == nil then
+        return nil
+    end
+
+    local overlay = owner!.overlay()
+    local entry = OverlayEntry() do
+        return Frame()
+    end
+
+    local handle = OverlayHandle(overlay, entry)
+
+    entry.builder = fn()
+        local dialog = ColorPickerDialog(title: title, initial: color, onPick: fn(argb: integer)
+            handle.close()
+            onPick(argb)
+        end, onCancel: fn()
+            handle.close()
+        end)
+
+        return ModalBarrier(
+            color: Color.rgba(0, 0, 0, 0.18),
+            child: Center(child: dialog.frame(width: 500.0, height: 360.0))
+        )
+    end
+
+    overlay.insert(entry)
+
+    return handle
+end
+
+-- ============================================================================
+-- ColorPickerDialog
+-- ============================================================================
+
+export class ColorPickerDialog extends View
+    title: string
+    initial: integer
+    onPick: fn(integer) -> nil
+    onCancel: fn() -> nil
+
+    fn init(
+        title: string,
+        initial: integer,
+        onPick: fn(integer) -> nil,
+        onCancel: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.title = title
+        self.initial = initial
+        self.onPick = onPick
+        self.onCancel = onCancel
+    end
+
+    fn body(context: BuildContext) -> View
+        -- The colour is kept as HSV, not packed: a grey has no hue of its own,
+        -- and keeping the hue separately is what stops the square snapping
+        -- back to red whenever the colour passes through grey.
+        local start = Hsv.fromArgb(self.initial)
+        local hue = context.state("h", start.h)
+        local sat = context.state("s", start.s)
+        local val = context.state("v", start.v)
+        local alpha = context.state("a", start.a)
+
+        local current = Hsv(hue.number(), sat.number(), val.number(), alpha.number())
+        local argb = current.toArgb()
+
+        -- Take a whole new colour (typed, or the old one back) — keeping the
+        -- hue when the new colour is a grey and so has none.
+        local adopt = fn(next: integer) -> nil
+            local hsv = Hsv.fromArgb(next)
+
+            if hsv.s > 0.0 then
+                hue.set(hsv.h)
+            end
+
+            sat.set(hsv.s)
+            val.set(hsv.v)
+            alpha.set(hsv.a)
+        end
+
+        -- One 0–255 channel typed in, at bit `shift` of the packed colour.
+        local channel = fn(shift: integer) -> fn(integer) -> nil
+            return fn(n: integer)
+                local byte = Math.clamp(n, 0, 255)
+
+                adopt((argb & ~(0xFF << shift)) | (byte << shift))
+            end
+        end
+
+        local square = SaturationValueField(
+            hue: hue.number(),
+            saturation: sat.number(),
+            value: val.number(),
+            onChange: fn(s: float, v: float)
+                sat.set(s)
+                val.set(v)
+            end
+        )
+
+        local strip = HueBar(hue: hue.number(), onChange: fn(h: float)
+            hue.set(h)
+        end)
+
+        local fields = VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+            HStack(spacing: 0.0) do
+                Label("Old", color: Palette.textMuted, size: Metrics.smallFontSize).expanded()
+                Label("New", color: Palette.textMuted, size: Metrics.smallFontSize).expanded()
+            end.frame(height: 14.0)
+
+            ColorCompare(before: self.initial, after: argb, onRevert: fn()
+                adopt(self.initial)
+            end).frame(height: 36.0)
+
+            FormRow(
+                label: "Hex:",
+                labelWidth: 48.0,
+                child: Field(value: Argb.hex(argb)) do (text: string)
+                    local digits = Parse.hex(text)
+                    local count = String.len(String.trim(text))
+
+                    if String.starts(String.trim(text), "#") then
+                        count -= 1
+                    end
+
+                    if digits != nil and (count == 6 or count == 8) then
+                        adopt(Argb.parse(digits!, count))
+                    end
+                end
+            )
+
+            FormRow(
+                label: "Red:",
+                labelWidth: 48.0,
+                child: NumberField(value: (argb >> 16) & 0xFF, onChanged: channel(16))
+            )
+            FormRow(
+                label: "Green:",
+                labelWidth: 48.0,
+                child: NumberField(value: (argb >> 8) & 0xFF, onChanged: channel(8))
+            )
+            FormRow(
+                label: "Blue:",
+                labelWidth: 48.0,
+                child: NumberField(value: argb & 0xFF, onChanged: channel(0))
+            )
+            FormRow(
+                label: "Alpha:",
+                labelWidth: 48.0,
+                child: NumberField(value: (argb >> 24) & 0xFF, onChanged: channel(24))
+            )
+        end
+
+        local opacity = HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+            Label("Opacity:").frame(width: 60.0)
+            AlphaBar(opaque: current.opaque(), alpha: alpha.number(), onChange: fn(a: float)
+                alpha.set(a)
+            end).frame(height: 16.0).expanded()
+        end
+
+        local buttons = HStack(distribution: Distribution.End, spacing: 8.0) do
+            PushButton(label: "OK", glyph: Glyphs.check, glyphColor: Palette.run, width: 90.0) do
+                self.onPick(argb)
+            end
+            PushButton(label: "Cancel", width: 90.0, action: self.onCancel)
+        end
+
+        local content = VStack(alignment: StackAlignment.Fill, spacing: 10.0) do
+            HStack(alignment: StackAlignment.Fill, spacing: 12.0) do
+                square.frame(width: 210.0, height: 210.0)
+                strip.frame(width: 22.0, height: 210.0)
+                fields.expanded()
+            end.frame(height: 210.0)
+
+            show(opacity)
+            Spacer()
+            buttons.frame(height: 26.0)
+        end
+
+        return Focus(modal: true, autofocus: true, tabStop: false, onKeyDown: fn(event: KeyEvent)
+            if event.key == "escape" then
+                self.onCancel()
+
+                return true
+            end
+
+            if event.key == "return" then
+                self.onPick(argb)
+
+                return true
+            end
+
+            return false
+        end, child: DialogFrame(title: self.title, glyph: Glyphs.palette, onClose: self.onCancel) do
+            content.padding(12.0)
+        end)
+    end
+end
+
+-- The colour the picker started from beside the one it has now. Clicking
+-- the old half takes it back.
+export class ColorCompare extends View
+    before: integer
+    after: integer
+    onRevert: fn() -> nil
+
+    fn init(before: integer, after: integer, onRevert: fn() -> nil, key: string? = nil)
+        self.super(key)
+
+        self.before = before
+        self.after = after
+        self.onRevert = onRevert
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local half = Math.floor(el.size.width / 2.0) ?? 0
+        local w = half as float
+        local h = el.size.height
+
+        Swatch.paintColor(self.before, x, y, w, h)
+        Swatch.paintColor(self.after, x + w, y, el.size.width - w, h)
+
+        Palette.windowFrame.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + 0.5, y + 0.5, el.size.width - 1.0, h - 1.0)
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        if event.kind == PointerKind.Down and inside and x < el.size.width / 2.0 then
+            self.onRevert()
+
+            return true
+        end
+
+        return false
+    end
+end

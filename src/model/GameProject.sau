@@ -1,0 +1,229 @@
+from Signal import *
+from ResourceKind import *
+from Resource import *
+from ResourceGroup import *
+from SpriteData import *
+from EventKind import *
+from EventCatalog import *
+from ObjectEvent import *
+from ObjectData import *
+
+-- ============================================================================
+-- GameProject
+-- ============================================================================
+--
+-- A whole game: its name, and one root group of resources per kind.
+--
+-- Everything that changes the project goes through a method here, and every
+-- one of those methods ends with `changed.emit()` — so whoever is showing the
+-- project (the resource tree, an open editor) only has to listen in one place.
+
+export class GameProject
+    name: string
+    changed: Signal
+
+    local roots: table<string, ResourceGroup>
+    local nextId: integer
+
+    -- Per kind, the number the next default name gets: sprite0, sprite1, …
+    local counters: table<string, integer>
+
+    fn init(name: string = "untitled")
+        self.name = name
+        self.changed = Signal()
+        self.roots = {}
+        self.nextId = 1
+        self.counters = {}
+
+        for kind in ResourceKinds.all() do
+            self.roots[kind.value] = ResourceGroup(kind.plural(), kind)
+            self.counters[kind.value] = 0
+        end
+    end
+
+    -- The top-level group for a kind — the "Sprites" folder, for instance.
+    fn root(kind: ResourceKind) -> ResourceGroup
+        return self.roots[kind.value]!
+    end
+
+    -- Make a new resource with the next free default name, file it in its
+    -- kind's root group, and hand it back.
+    fn create(kind: ResourceKind) -> Resource
+        local number = self.counters[kind.value]!
+        self.counters[kind.value] = number + 1
+
+        local resource = Resource(self.nextId, kind, kind.value .. number)
+        self.nextId += 1
+
+        self.root(kind).add(resource)
+        self.changed.emit()
+
+        return resource
+    end
+
+    fn find(id: integer) -> Resource?
+        for kind in ResourceKinds.all() do
+            local found = self.root(kind).find(id)
+
+            if found != nil then
+                return found
+            end
+        end
+
+        return nil
+    end
+
+    -- The sprite data of a sprite resource, or nil for anything else.
+    fn sprite(id: integer) -> SpriteData?
+        return self.find(id)?.sprite
+    end
+
+    -- Every resource of a kind, in tree order: what a "pick a sprite" list
+    -- offers.
+    fn all(kind: ResourceKind) -> Resource[]
+        local list: Resource[] = {}
+        self.root(kind).collect(list)
+
+        return list
+    end
+
+    -- A resource's name, or `fallback` when the id is 0 or gone.
+    fn nameOf(id: integer, fallback: string = "<none>") -> string
+        if id == 0 then
+            return fallback
+        end
+
+        return self.find(id)?.name ?? fallback
+    end
+
+    -- --- Objects -------------------------------------------------------------------
+
+    -- The object data of an object resource, or nil for anything else.
+    fn object(id: integer) -> ObjectData?
+        return self.find(id)?.object
+    end
+
+    -- Is `ancestor` the object's parent, or its parent's parent, …? Making
+    -- an object the parent of its own ancestor would be a loop.
+    fn descendsFrom(id: integer, ancestor: integer) -> boolean
+        local seen: table<integer, boolean> = {}
+        local current = self.object(id)?.parentId ?? 0
+
+        while current != 0 and seen[current] != true do
+            if current == ancestor then
+                return true
+            end
+
+            seen[current] = true
+            current = self.object(current)?.parentId ?? 0
+        end
+
+        return false
+    end
+
+    -- The events an object gets from its parents and doesn't define itself.
+    -- The nearest parent wins when two define the same event.
+    fn inherited(id: integer) -> InheritedEvent[]
+        local own = self.object(id)
+        local list: InheritedEvent[] = {}
+
+        if own == nil then
+            return list
+        end
+
+        local seen: table<integer, boolean> = {}
+        seen[id] = true
+        local current = own!.parentId
+
+        while current != 0 and seen[current] != true do
+            seen[current] = true
+            local parent = self.object(current)
+
+            if parent == nil then
+                break
+            end
+
+            for event in parent!.events do
+                local taken = own!.slot(event.kind, event.detail, event.target) != nil
+
+                for other in list do
+                    if other.event.isSlot(event.kind, event.detail, event.target) then
+                        taken = true
+                    end
+                end
+
+                if not taken then
+                    list[#list + 1] = InheritedEvent(event, current)
+                end
+            end
+
+            current = parent!.parentId
+        end
+
+        Table.sort(list, (a: InheritedEvent, b: InheritedEvent) => a.event.before(b.event))
+
+        return list
+    end
+
+    -- How an event is shown: "Create", "Begin Step", "Alarm (ShootRate)",
+    -- "Collision with wall", "Key Press (Space)".
+    fn eventTitle(event: ObjectEvent) -> string
+        local kind = event.kind
+
+        if kind == EventKind.Collision then
+            return "Collision with " .. self.nameOf(event.target, "<deleted>")
+        elseif kind == EventKind.Step or kind == EventKind.Mouse or kind == EventKind.Other then
+            return EventCatalog.titleOf(kind, event.detail)
+        elseif kind.isKey() or kind.isNamed() then
+            return kind.title() .. " (" .. EventCatalog.titleOf(kind, event.detail) .. ")"
+        end
+
+        return kind.title()
+    end
+
+    -- Something inside a resource changed (a sprite's frames, its origin…).
+    -- The resource edits itself; this tells everyone watching the project.
+    fn touch() -> nil
+        self.changed.emit()
+    end
+
+    fn rename(id: integer, name: string) -> nil
+        local resource = self.find(id)
+
+        if resource == nil or resource!.name == name then
+            return
+        end
+
+        resource!.name = name
+        self.changed.emit()
+    end
+
+    -- Delete a resource. Objects stop referring to it: a sprite they showed
+    -- is cleared, a parent forgotten, collisions with it removed.
+    fn delete(id: integer) -> boolean
+        for kind in ResourceKinds.all() do
+            if self.root(kind).remove(id) then
+                for resource in self.all(ResourceKind.Object) do
+                    resource.object?.forget(id)
+                end
+
+                self.changed.emit()
+
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- Total resources of every kind.
+    fn count() -> integer
+        local total = 0
+
+        for kind in ResourceKinds.all() do
+            total += self.root(kind).count()
+        end
+
+        return total
+    end
+end

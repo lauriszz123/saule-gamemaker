@@ -1,0 +1,111 @@
+from uikit import *
+from theme import Palette
+from TreeNode import *
+from TreeRow import *
+
+-- ============================================================================
+-- TreeView
+-- ============================================================================
+--
+-- A scrolling, expandable tree of `TreeNode`s.
+--
+--     TreeView(
+--         roots: nodes,
+--         expanded: expandedIds,          -- table<string, boolean>
+--         selectedId: selection,
+--         onToggle: fn(node) … end,
+--         onSelect: fn(node) … end,
+--         onActivate: fn(node) … end,     -- double-click
+--         onContextMenu: fn(node, x, y) … end
+--     )
+--
+-- It is fully *controlled*: which folders are open and which node is
+-- selected are handed in, and every change is reported back out. The tree
+-- keeps no state of its own, so whoever owns the data can also open a folder
+-- or move the selection — when a new resource is created, for instance.
+
+export class TreeView extends View
+    roots: TreeNode[]
+    expanded: table<string, boolean>
+    selectedId: string?
+    onToggle: fn(TreeNode) -> nil
+    onSelect: fn(TreeNode) -> nil
+    onActivate: fn(TreeNode) -> nil
+    onContextMenu: fn(TreeNode, float, float) -> nil
+
+    fn init(
+        roots: TreeNode[],
+        expanded: table<string, boolean>,
+        selectedId: string? = nil,
+        onToggle: fn(TreeNode) -> nil = (node: TreeNode) => nil,
+        onSelect: fn(TreeNode) -> nil = (node: TreeNode) => nil,
+        onActivate: fn(TreeNode) -> nil = (node: TreeNode) => nil,
+        onContextMenu: fn(TreeNode, float, float) -> nil = (node: TreeNode, x: float, y: float) => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.roots = roots
+        self.expanded = expanded
+        self.selectedId = selectedId
+        self.onToggle = onToggle
+        self.onSelect = onSelect
+        self.onActivate = onActivate
+        self.onContextMenu = onContextMenu
+    end
+
+    fn isExpanded(node: TreeNode) -> boolean
+        return self.expanded[node.id] == true
+    end
+
+    fn body(context: BuildContext) -> View
+        local rows: View[] = {}
+
+        for root in self.roots do
+            self.collect(root, 0, rows)
+        end
+
+        local column = VStack(alignment: StackAlignment.Fill, sizing: StackSize.Fit, children: rows)
+
+        return ScrollView(child: column.padding(insets: EdgeInsets.all(4.0))).background(
+            Palette.field
+        )
+    end
+
+    -- Depth-first: a row for this node, then — if it is open — its children.
+    local fn collect(node: TreeNode, depth: integer, rows: View[]) -> nil
+        local open = self.isExpanded(node)
+
+        rows[#rows + 1] = TreeRow(
+            node: node,
+            depth: depth,
+            expanded: open,
+            selected: self.selectedId == node.id,
+            onToggle: fn()
+                self.onToggle(node)
+            end,
+            onSelect: fn()
+                self.onSelect(node)
+            end,
+            onActivate: fn()
+                -- Double-clicking a folder opens or closes it, as well as
+                -- telling the owner.
+                if node.canExpand() then
+                    self.onToggle(node)
+                end
+
+                self.onActivate(node)
+            end,
+            onContextMenu: fn(x: float, y: float)
+                self.onContextMenu(node, x, y)
+            end,
+            key: node.id
+        )
+
+        if open then
+            for child in node.children do
+                self.collect(child, depth + 1, rows)
+            end
+        end
+    end
+end

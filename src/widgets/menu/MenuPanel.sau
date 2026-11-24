@@ -1,0 +1,132 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from MenuEntry import *
+
+-- ============================================================================
+-- MenuPanel
+-- ============================================================================
+--
+-- The drop-down box itself: a column of entry rows in a bordered, shadowed
+-- panel. It knows nothing about where it is shown — `openMenuPopup` puts it
+-- on screen, for the menu bar and for right-click menus alike.
+
+export class MenuPanel extends View
+    entries: MenuEntry[]
+    onChosen: fn(MenuEntry) -> nil
+
+    fn init(entries: MenuEntry[], onChosen: fn(MenuEntry) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.entries = entries
+        self.onChosen = onChosen
+    end
+
+    -- Height of the panel, worked out from the entries rather than measured,
+    -- so the popup can keep itself on screen before it is laid out.
+    static fn heightOf(entries: MenuEntry[]) -> float
+        local height = 6.0
+
+        for entry in entries do
+            if entry.separator then
+                height += 7.0
+            else
+                height += Metrics.menuRowHeight
+            end
+        end
+
+        return height
+    end
+
+    fn body(context: BuildContext) -> View
+        local rows: View[] = {}
+
+        for entry in self.entries do
+            if entry.separator then
+                rows[#rows + 1] = Rule(etched: true).padding(
+                    insets: EdgeInsets.symmetric(horizontal: 4.0, vertical: 3.0)
+                )
+            else
+                rows[#rows + 1] = MenuEntryRow(entry, self.onChosen)
+            end
+        end
+
+        local column = VStack(alignment: StackAlignment.Fill, sizing: StackSize.Fit, children: rows)
+
+        return DropShadow(
+            child: Edges.box(column.padding(3.0), Palette.bevelShadow, Palette.chrome)
+        )
+    end
+end
+
+-- One row: [check or glyph] label ............ shortcut
+export class MenuEntryRow extends View
+    entry: MenuEntry
+    onChosen: fn(MenuEntry) -> nil
+
+    fn init(entry: MenuEntry, onChosen: fn(MenuEntry) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.entry = entry
+        self.onChosen = onChosen
+    end
+
+    fn body(context: BuildContext) -> View
+        local entry = self.entry
+        local scratch = context.data()
+        local active = entry.isActive()
+        local lit = active and scratch.hovered
+
+        local ink = Palette.text
+        if not active then
+            ink = Palette.textDisabled
+        end
+
+        -- The gutter on the left holds a tick for a checked entry, otherwise
+        -- the entry's own glyph, otherwise nothing.
+        local gutter: View = Frame(width: 26.0)
+
+        if entry.checked then
+            gutter = Icon(Glyphs.check, 16.0, ink).centered().frame(width: 26.0)
+        elseif entry.glyph != nil then
+            local tint = entry.glyphColor ?? ink
+
+            if not active then
+                tint = Palette.textDisabled
+            end
+
+            gutter = Icon(entry.glyph!, Metrics.iconSize, tint).centered().frame(width: 26.0)
+        end
+
+        local row = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            show(gutter)
+            Label(entry.label, color: ink).expanded()
+            Label(entry.shortcut, color: Palette.textMuted)
+            Frame(width: 10.0)
+        end
+
+        local fill: Color? = nil
+        local edge: Color? = nil
+
+        if lit then
+            fill = Palette.hover
+            edge = Palette.hoverBorder
+        end
+
+        local surface = Surface(
+            color: fill,
+            radius: 2.0,
+            border: edge,
+            child: row.frame(height: Metrics.menuRowHeight)
+        )
+
+        return GestureArea(child: surface, onHover: fn(inside: boolean)
+            scratch.hovered = inside
+            context.markNeedsBuild()
+        end, onTap: fn()
+            if active then
+                self.onChosen(entry)
+            end
+        end)
+    end
+end

@@ -1,0 +1,23 @@
+from model import SpriteData, SpriteFrame
+from widgets import ImageRegion
+
+-- ============================================================================
+-- regionsOf
+-- ============================================================================
+--
+-- A sprite's frames as the image regions the preview widgets draw. The
+-- widgets don't know what a sprite is; this is the one place the two meet.
+
+export fn regionsOf(sprite: SpriteData) -> ImageRegion[]
+    local regions: ImageRegion[] = {}
+
+    for frame in sprite.frames do
+        regions[#regions + 1] = regionOf(frame)
+    end
+
+    return regions
+end
+
+export fn regionOf(frame: SpriteFrame) -> ImageRegion
+    return ImageRegion.whole(frame.image, frame.width, frame.height)
+end

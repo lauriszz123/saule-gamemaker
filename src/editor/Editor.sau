@@ -1,0 +1,705 @@
+from uikit import Assets
+from model import *
+from Document import *
+from Workspace import *
+from SpriteImporter import *
+from ObjectReport import *
+
+-- ============================================================================
+-- Editor
+-- ============================================================================
+--
+-- One editing session: the game being edited, the windows open on it, and
+-- what is selected in the resource tree.
+--
+-- This is the layer between the data and the screen. The views call methods
+-- here ("create a sprite", "open that room"); the methods change the model
+-- and the workspace; `changed` fires; the views redraw. The views never
+-- change the model directly, and nothing in here draws.
+
+export class Editor
+    project: GameProject
+    workspace: Workspace
+
+    -- Fires after anything the screen shows has changed.
+    changed: Signal
+
+    -- Which tree item is selected, by node id (see `NodeIds`), and the
+    -- resource it stands for, or 0 when it isn't a resource.
+    selectedNode: string?
+    selectedResource: integer
+
+    -- Which tree folders are open, by node id.
+    expanded: table<string, boolean>
+
+    -- Where the last image was loaded from, so the next file dialog opens
+    -- there instead of back at the start.
+    imageFolder: string
+
+    -- Colours chosen in the colour picker, newest first, shared by every
+    -- image editor so a colour picked in one is at hand in the next.
+    recentColors: integer[]
+
+    local projectListener: integer
+
+    fn init()
+        self.project = GameProject()
+        self.workspace = Workspace()
+        self.changed = Signal()
+        self.selectedNode = nil
+        self.selectedResource = 0
+        self.expanded = {}
+        self.imageFolder = Assets.resolve("assets/samples")
+        self.recentColors = {}
+
+        self.projectListener = self.project.changed.connect(() => self.changed.emit())
+        self.workspace.changed.connect(() => self.changed.emit())
+    end
+
+    -- --- The game -------------------------------------------------------------
+
+    -- Throw the current game away and start an empty one.
+    fn newGame() -> nil
+        self.project.changed.disconnect(self.projectListener)
+
+        self.project = GameProject()
+        self.projectListener = self.project.changed.connect(() => self.changed.emit())
+
+        self.selectedNode = nil
+        self.selectedResource = 0
+        self.expanded = {}
+
+        -- Emits `changed` for us.
+        self.workspace.closeAll()
+    end
+
+    -- --- Resources --------------------------------------------------------------
+
+    -- Make a new resource, show it in the tree, and open its editor — what
+    -- every "Create …" button does.
+    fn createResource(kind: ResourceKind) -> Resource
+        local resource = self.project.create(kind)
+
+        self.expanded[NodeIds.folder(kind)] = true
+        self.select(NodeIds.resource(resource.id), resource.id)
+        self.openResource(resource.id)
+
+        return resource
+    end
+
+    fn openResource(id: integer) -> nil
+        local resource = self.project.find(id)
+
+        if resource == nil then
+            return
+        end
+
+        local width: float, height: float = Editor.windowSize(resource!.kind)
+
+        self.workspace.open(DocumentKind.Resource, id, width, height)
+    end
+
+    fn renameResource(id: integer, name: string) -> nil
+        self.project.rename(id, name)
+    end
+
+    fn deleteResource(id: integer) -> nil
+        self.workspace.closeResource(id)
+
+        -- Collisions with it are about to go, and their script windows too.
+        for resource in self.project.all(ResourceKind.Object) do
+            for event in resource.object!.events do
+                if event.kind == EventKind.Collision and event.target == id then
+                    self.workspace.closePart(resource.id, event.id)
+                end
+            end
+        end
+
+        if self.selectedResource == id then
+            self.selectedNode = nil
+            self.selectedResource = 0
+        end
+
+        self.project.delete(id)
+    end
+
+    fn selected() -> Resource?
+        if self.selectedResource == 0 then
+            return nil
+        end
+
+        return self.project.find(self.selectedResource)
+    end
+
+    -- --- Sprites ----------------------------------------------------------------------
+
+    fn sprite(id: integer) -> SpriteData?
+        return self.project.sprite(id)
+    end
+
+    -- Load Sprite: replace every frame with the ones in `path`. Returns
+    -- false, changing nothing, when the file can't be read.
+    fn loadSprite(id: integer, path: string) -> boolean
+        local sprite = self.sprite(id)
+        local frames = SpriteImporter.read(path)
+
+        if sprite == nil or frames == nil then
+            return false
+        end
+
+        -- The old frames are gone, so are any image editors painting them.
+        for frame in sprite!.frames do
+            self.workspace.closePart(id, frame.id)
+        end
+
+        sprite!.replace(frames!)
+        self.rememberFolder(path)
+        self.project.touch()
+
+        return true
+    end
+
+    -- Add a transparent subimage at the end, the size of the ones already
+    -- there (32 × 32 for an empty sprite). Returns its position.
+    fn addBlankSpriteFrame(id: integer) -> integer
+        local sprite = self.sprite(id)
+
+        if sprite == nil then
+            return 0
+        end
+
+        local width = sprite!.width()
+        local height = sprite!.height()
+
+        if width == 0 or height == 0 then
+            width = 32
+            height = 32
+        end
+
+        sprite!.append({SpriteImporter.blank(width, height)})
+        self.project.touch()
+
+        return sprite!.count()
+    end
+
+    -- Add from file: append the frames in `path` after the existing ones.
+    fn addSpriteFrames(id: integer, path: string) -> boolean
+        local sprite = self.sprite(id)
+        local frames = SpriteImporter.read(path)
+
+        if sprite == nil or frames == nil then
+            return false
+        end
+
+        sprite!.append(frames!)
+        self.rememberFolder(path)
+        self.project.touch()
+
+        return true
+    end
+
+    fn setSpriteOrigin(id: integer, x: integer, y: integer) -> nil
+        local sprite = self.sprite(id)
+
+        if sprite == nil or (sprite!.originX == x and sprite!.originY == y) then
+            return
+        end
+
+        sprite!.originX = x
+        sprite!.originY = y
+        self.project.touch()
+    end
+
+    fn centerSpriteOrigin(id: integer) -> nil
+        local sprite = self.sprite(id)
+
+        if sprite != nil then
+            sprite!.centerOrigin()
+            self.project.touch()
+        end
+    end
+
+    fn setSpriteCollision(id: integer, precise: boolean, separate: boolean) -> nil
+        local sprite = self.sprite(id)
+
+        if sprite != nil then
+            sprite!.preciseCollision = precise
+            sprite!.separateMasks = separate
+            self.project.touch()
+        end
+    end
+
+    fn removeSpriteFrame(id: integer, index: integer) -> nil
+        local sprite = self.sprite(id)
+
+        if sprite != nil then
+            local frame = sprite!.frame(index)
+
+            if frame != nil then
+                self.workspace.closePart(id, frame!.id)
+            end
+
+            sprite!.remove(index)
+            self.project.touch()
+        end
+    end
+
+    fn duplicateSpriteFrame(id: integer, index: integer) -> nil
+        local sprite = self.sprite(id)
+
+        if sprite != nil then
+            sprite!.duplicate(index)
+            self.project.touch()
+        end
+    end
+
+    -- Shift a frame one place left (-1) or right (+1); returns its new index.
+    fn moveSpriteFrame(id: integer, index: integer, delta: integer) -> integer
+        local sprite = self.sprite(id)
+
+        if sprite == nil then
+            return index
+        end
+
+        local moved = sprite!.move(index, delta)
+        self.project.touch()
+
+        return moved
+    end
+
+    -- Edit Sprite: open the frame editor for a sprite.
+    fn openSpriteFrames(id: integer) -> nil
+        if self.sprite(id) != nil then
+            self.workspace.open(DocumentKind.SpriteFrames, id, 620.0, 440.0)
+        end
+    end
+
+    -- The image editor for one subimage, by the frame's id.
+    fn openSpriteImage(id: integer, frameId: integer) -> nil
+        if self.spriteFrame(id, frameId) != nil then
+            self.workspace.open(DocumentKind.SpriteImage, id, 780.0, 600.0, frameId)
+        end
+    end
+
+    fn spriteFrame(id: integer, frameId: integer) -> SpriteFrame?
+        local sprite = self.sprite(id)
+
+        if sprite == nil then
+            return nil
+        end
+
+        local frame: SpriteFrame?, index: integer = sprite!.find(frameId)
+
+        return frame
+    end
+
+    -- Put a picked colour at the front of the recent ones, once, keeping a
+    -- short list.
+    fn rememberColor(argb: integer) -> nil
+        local index = Table.indexOf(self.recentColors, argb)
+
+        if index != nil then
+            Table.remove(self.recentColors, index!)
+        end
+
+        Table.insert(self.recentColors, argb, 1)
+
+        while #self.recentColors > 12 do
+            Table.remove(self.recentColors)
+        end
+    end
+
+    -- The image editor finished a stroke, undo or redo: the pixels changed,
+    -- so everything else showing them redraws.
+    fn spriteImageChanged() -> nil
+        self.project.touch()
+    end
+
+    local fn rememberFolder(path: string) -> nil
+        local found = String.match(path, "^(.*)/[^/]*$")
+
+        if found != nil and found![1] != "" then
+            self.imageFolder = found![1]
+        end
+    end
+
+    -- --- Objects ------------------------------------------------------------------------
+
+    fn object(id: integer) -> ObjectData?
+        return self.project.object(id)
+    end
+
+    fn setObjectSprite(id: integer, spriteId: integer) -> nil
+        local object = self.object(id)
+
+        if object != nil and object!.spriteId != spriteId then
+            object!.spriteId = spriteId
+            self.project.touch()
+        end
+    end
+
+    -- "New" beside the sprite box: make a sprite, use it, and open it.
+    fn createObjectSprite(id: integer) -> nil
+        local sprite = self.project.create(ResourceKind.Sprite)
+
+        self.expanded[NodeIds.folder(ResourceKind.Sprite)] = true
+        self.setObjectSprite(id, sprite.id)
+        self.openResource(sprite.id)
+    end
+
+    fn setObjectMask(id: integer, maskId: integer) -> nil
+        local object = self.object(id)
+
+        if object != nil and object!.maskId != maskId then
+            object!.maskId = maskId
+            self.project.touch()
+        end
+    end
+
+    -- Could `parentId` be this object's parent? Not itself, and not one of
+    -- its own children (or theirs), which would make a loop.
+    fn canBeParent(id: integer, parentId: integer) -> boolean
+        if parentId == 0 then
+            return true
+        end
+
+        return parentId != id and not self.project.descendsFrom(parentId, id)
+    end
+
+    fn setObjectParent(id: integer, parentId: integer) -> boolean
+        local object = self.object(id)
+
+        if object == nil or not self.canBeParent(id, parentId) then
+            return false
+        end
+
+        if object!.parentId != parentId then
+            object!.parentId = parentId
+            self.project.touch()
+        end
+
+        return true
+    end
+
+    fn setObjectFlags(id: integer, visible: boolean, solid: boolean, persistent: boolean) -> nil
+        local object = self.object(id)
+
+        if object != nil then
+            object!.visible = visible
+            object!.solid = solid
+            object!.persistent = persistent
+            self.project.touch()
+        end
+    end
+
+    fn setObjectDepth(id: integer, depth: integer) -> nil
+        local object = self.object(id)
+
+        if object != nil and object!.depth != depth then
+            object!.depth = depth
+            self.project.touch()
+        end
+    end
+
+    -- --- Events -------------------------------------------------------------------------
+
+    fn objectEvent(id: integer, eventId: integer) -> ObjectEvent?
+        return self.object(id)?.find(eventId)
+    end
+
+    -- Why (kind, detail, target) can't be added to the object — or changed
+    -- to, when `except` is the event being changed — or nil when it can.
+    fn eventProblem(
+        id: integer,
+        kind: EventKind,
+        detail: string,
+        target: integer,
+        except: integer = 0
+    ) -> string?
+        local object = self.object(id)
+
+        if object == nil then
+            return "The object no longer exists."
+        end
+
+        if kind.isNamed() then
+            if String.trim(detail) == "" then
+                return "Give the " .. String.lower(kind.title()) .. " a name."
+            end
+
+            if String.match(String.trim(detail), "^[%a_][%w_]*$") == nil then
+                return "Names are letters, digits and _, not starting with a digit."
+            end
+        end
+
+        if kind == EventKind.Collision and self.object(target) == nil then
+            return "Pick the object to collide with."
+        end
+
+        local existing = object!.slot(kind, detail, target)
+
+        if existing != nil and existing!.id != except then
+            return "The object already has this event."
+        end
+
+        return nil
+    end
+
+    -- Add an event, if the object doesn't have it already. Returns the new
+    -- event's id, or 0 when it couldn't be added.
+    fn addObjectEvent(id: integer, kind: EventKind, detail: string, target: integer) -> integer
+        if self.eventProblem(id, kind, detail, target) != nil then
+            return 0
+        end
+
+        local event = self.object(id)!.add(ObjectEvent(kind, String.trim(detail), target))
+        self.project.touch()
+
+        return event.id
+    end
+
+    -- Turn an event into a different one, keeping its code — GameMaker's
+    -- "Change". An alarm keeps its settings only while it stays an alarm.
+    fn changeObjectEvent(
+        id: integer,
+        eventId: integer,
+        kind: EventKind,
+        detail: string,
+        target: integer
+    ) -> boolean
+        local object = self.object(id)
+        local event = self.objectEvent(id, eventId)
+
+        if object == nil or event == nil or self.eventProblem(id, kind, detail, target, eventId) != nil then
+            return false
+        end
+
+        if kind == EventKind.Alarm and event!.alarm == nil then
+            event!.alarm = AlarmSettings()
+        elseif kind != EventKind.Alarm then
+            event!.alarm = nil
+        end
+
+        event!.kind = kind
+        event!.detail = String.trim(detail)
+        event!.target = target
+        object!.sort()
+        self.project.touch()
+
+        return true
+    end
+
+    -- Rename an alarm or user event. False, changing nothing, for a name
+    -- that's empty, malformed or taken.
+    fn renameObjectEvent(id: integer, eventId: integer, name: string) -> boolean
+        local event = self.objectEvent(id, eventId)
+
+        if event == nil or not event!.kind.isNamed() then
+            return false
+        end
+
+        return self.changeObjectEvent(id, eventId, event!.kind, name, 0)
+    end
+
+    fn setAlarmSettings(id: integer, eventId: integer, settings: AlarmSettings) -> nil
+        local event = self.objectEvent(id, eventId)
+
+        if event != nil and event!.kind == EventKind.Alarm then
+            event!.alarm = settings
+            self.project.touch()
+        end
+    end
+
+    fn removeObjectEvent(id: integer, eventId: integer) -> nil
+        local object = self.object(id)
+
+        if object != nil and object!.remove(eventId) then
+            self.workspace.closePart(id, eventId)
+            self.project.touch()
+        end
+    end
+
+    fn setEventCode(id: integer, eventId: integer, code: string) -> nil
+        local event = self.objectEvent(id, eventId)
+
+        if event != nil and event!.code != code then
+            event!.code = code
+            self.project.touch()
+        end
+    end
+
+    -- Give the object its own copy of an event it inherits, to change.
+    -- Returns the copy's id.
+    fn overrideEvent(id: integer, inherited: ObjectEvent) -> integer
+        local object = self.object(id)
+
+        if object == nil then
+            return 0
+        end
+
+        local existing = object!.slot(inherited.kind, inherited.detail, inherited.target)
+
+        if existing != nil then
+            return existing!.id
+        end
+
+        local event = object!.add(inherited.copy())
+        self.project.touch()
+
+        return event.id
+    end
+
+    -- The script window of one event.
+    fn openEventScript(id: integer, eventId: integer) -> nil
+        if self.objectEvent(id, eventId) != nil then
+            self.workspace.open(DocumentKind.EventScript, id, 620.0, 460.0, eventId)
+        end
+    end
+
+    -- "Show Information": everything about an object as plain text.
+    fn objectInformation(id: integer) -> string
+        return ObjectReport.describe(self.project, id)
+    end
+
+    -- --- Game-wide documents ------------------------------------------------------
+
+    fn openGameInformation() -> nil
+        self.workspace.open(DocumentKind.GameInformation, 0, 520.0, 400.0)
+    end
+
+    fn openGameSettings() -> nil
+        self.workspace.open(DocumentKind.GameSettings, 0, 560.0, 420.0)
+    end
+
+    -- What a document's title bar says.
+    fn titleOf(document: Document) -> string
+        return match document.kind
+            case DocumentKind.GameInformation then "Game Information"
+            case DocumentKind.GameSettings then "Global Game Settings"
+            case DocumentKind.Resource then self.resourceTitle(document.resourceId)
+            case DocumentKind.SpriteFrames then self.spriteFramesTitle(document.resourceId)
+            case DocumentKind.SpriteImage then self.spriteImageTitle(
+                document.resourceId,
+                document.part
+            )
+            case DocumentKind.EventScript then self.eventScriptTitle(
+                document.resourceId,
+                document.part
+            )
+        end
+    end
+
+    local fn eventScriptTitle(id: integer, eventId: integer) -> string
+        local resource = self.project.find(id)
+        local event = self.objectEvent(id, eventId)
+
+        if resource == nil or event == nil then
+            return "(deleted)"
+        end
+
+        return "Script: " .. resource!.name .. " — " .. self.project.eventTitle(event!)
+    end
+
+    local fn spriteImageTitle(id: integer, frameId: integer) -> string
+        local resource = self.project.find(id)
+        local sprite = self.sprite(id)
+
+        if resource == nil or sprite == nil then
+            return "(deleted)"
+        end
+
+        local frame: SpriteFrame?, index: integer = sprite!.find(frameId)
+
+        if frame == nil then
+            return "Image Editor: " .. resource!.name
+        end
+
+        return "Image Editor: " .. resource!.name .. " — image " .. (index - 1)
+    end
+
+    local fn spriteFramesTitle(id: integer) -> string
+        local resource = self.project.find(id)
+
+        if resource == nil then
+            return "(deleted)"
+        end
+
+        return "Sprite Editor: " .. resource!.name
+    end
+
+    local fn resourceTitle(id: integer) -> string
+        local resource = self.project.find(id)
+
+        if resource == nil then
+            return "(deleted)"
+        end
+
+        return resource!.kind.title() .. " Properties: " .. resource!.name
+    end
+
+    -- --- The resource tree ----------------------------------------------------------
+
+    fn select(node: string?, resourceId: integer = 0) -> nil
+        if self.selectedNode == node then
+            return
+        end
+
+        self.selectedNode = node
+        self.selectedResource = resourceId
+        self.changed.emit()
+    end
+
+    fn toggleExpanded(node: string) -> nil
+        self.expanded[node] = not (self.expanded[node] == true)
+        self.changed.emit()
+    end
+
+    fn setAllExpanded(open: boolean) -> nil
+        for kind in ResourceKinds.all() do
+            self.expanded[NodeIds.folder(kind)] = open
+        end
+
+        self.changed.emit()
+    end
+
+    -- How big a new editor window opens, per kind. Rooms and objects have
+    -- the most to show; a sound or a font very little.
+    static fn windowSize(kind: ResourceKind) -> (float, float)
+        if kind == ResourceKind.Room then
+            return 760.0, 520.0
+        elseif kind == ResourceKind.Object then
+            return 780.0, 500.0
+        elseif kind == ResourceKind.Script or kind == ResourceKind.Path then
+            return 600.0, 440.0
+        elseif kind == ResourceKind.Sprite then
+            return 660.0, 500.0
+        elseif kind == ResourceKind.Background then
+            return 540.0, 380.0
+        elseif kind == ResourceKind.TimeLine then
+            return 560.0, 400.0
+        end
+
+        return 440.0, 300.0
+    end
+end
+
+-- ============================================================================
+-- NodeIds
+-- ============================================================================
+--
+-- The ids the resource tree gives its items. Selection and expansion are
+-- stored by these, so they live next to the state that uses them.
+
+export class NodeIds
+    static gameInformation: string = "gameinfo"
+    static gameSettings: string = "settings"
+    static extensions: string = "extensions"
+
+    static fn folder(kind: ResourceKind) -> string
+        return "folder:" .. kind.value
+    end
+
+    static fn resource(id: integer) -> string
+        return "resource:" .. id
+    end
+end

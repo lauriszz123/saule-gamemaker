@@ -1,0 +1,7 @@
+-- views/shell — the frame of the main window: menu bar, tool strip and the
+-- workspace the editor windows open in.
+
+export from CommandEntry import *
+export from MainMenu import *
+export from MainToolStrip import *
+export from WorkspaceView import *

@@ -1,0 +1,99 @@
+from shine import Window
+from uikit import *
+from theme import Metrics
+from MenuEntry import *
+from MenuPanel import *
+
+-- ============================================================================
+-- openMenuPopup
+-- ============================================================================
+--
+-- Show a list of entries as a floating menu with its top-left at (x, y), in
+-- window coordinates. The menu bar opens its drop-downs through this, and so
+-- does every right-click menu.
+--
+--     openMenuPopup(context, x, y, entries)
+--
+-- Clicking outside, or Escape, closes it. Choosing an entry closes it first
+-- and *then* runs the action, so an action that opens something of its own
+-- (a dialog, another menu) isn't fighting this one for the screen.
+--
+-- `onDismiss` is told whenever the menu closes — chosen, clicked away or
+-- escaped — which is how the menu bar knows to un-highlight its title.
+
+export fn openMenuPopup(
+    context: BuildContext,
+    x: float,
+    y: float,
+    entries: MenuEntry[],
+    width: float = 250.0,
+    onDismiss: (fn() -> nil)? = nil
+) -> OverlayHandle?
+    local owner = context.owner()
+
+    if owner == nil then
+        return nil
+    end
+
+    local overlay = owner!.overlay()
+    local entry = OverlayEntry() do
+        return Frame()
+    end
+
+    local handle = OverlayHandle(overlay, entry)
+
+    -- Closed instantly, not faded: desktop menus snap shut.
+    local close = fn()
+        handle.close()
+
+        if onDismiss != nil then
+            onDismiss!()
+        end
+    end
+
+    local choose = fn(chosen: MenuEntry)
+        close()
+
+        local action = chosen.action
+        if action != nil then
+            action!()
+        end
+    end
+
+    entry.builder = fn()
+        -- Keep the whole menu inside the window.
+        local windowWidth: integer, windowHeight: integer = Window.getSize()
+        local logicalWidth = Display.toLogical(windowWidth as float)
+        local logicalHeight = Display.toLogical(windowHeight as float)
+        local height = MenuPanel.heightOf(entries)
+
+        local left = atLeastZero(atMost(x, logicalWidth - width - 4.0))
+        local top = atLeastZero(atMost(y, logicalHeight - height - 4.0))
+
+        return ModalBarrier(
+            onDismiss: close,
+            child: Focus(modal: true, tabStop: false, onKeyDown: fn(event: KeyEvent)
+                if event.key == "escape" then
+                    close()
+
+                    return true
+                end
+
+                return false
+            end, child: ZStack(
+                children: {
+                    Positioned(
+                        left: left,
+                        top: top,
+                        width: width,
+                        child: MenuPanel(entries, choose)
+                    ),
+                }
+            ))
+        )
+    end
+
+    overlay.insert(entry)
+
+    return handle
+end

@@ -1,0 +1,339 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from widgets.form import *
+from widgets.preview import *
+from FileEntry import *
+from DialogFrame import *
+
+-- ============================================================================
+-- openFileDialog
+-- ============================================================================
+--
+-- Ask the user for a file. Opens a modal "Open" dialog over everything and
+-- calls `onOpen` with the absolute path they picked; cancelling calls
+-- nothing.
+--
+--     openFileDialog(context, title: "Load Sprite", folder: start, extensions: {".png"}) do (path: string)
+--         editor.loadSprite(id, path)
+--     end
+--
+-- Shine has no native file picker, so this is one built from the kit: a
+-- folder listing, a preview of the selected image, and a name box that also
+-- takes a typed path.
+
+export fn openFileDialog(
+    context: BuildContext,
+    title: string = "Open",
+    folder: string = "",
+    extensions: string[] = {},
+    onOpen: fn(string) -> nil = (path: string) => nil
+) -> OverlayHandle?
+    local owner = context.owner()
+
+    if owner == nil then
+        return nil
+    end
+
+    -- Forget cached pictures, so a file changed on disk since it was last
+    -- shown is read again.
+    Images.clear()
+
+    local overlay = owner!.overlay()
+    local entry = OverlayEntry() do
+        return Frame()
+    end
+
+    local handle = OverlayHandle(overlay, entry)
+
+    local start = folder
+    if not Paths.isFolder(start) then
+        start = Paths.home()
+    end
+
+    entry.builder = fn()
+        local dialog = FileDialog(
+            title: title,
+            folder: start,
+            extensions: extensions,
+            onOpen: fn(path: string)
+                handle.close()
+                onOpen(path)
+            end,
+            onCancel: fn()
+                handle.close()
+            end
+        )
+
+        return ModalBarrier(
+            color: Color.rgba(0, 0, 0, 0.18),
+            child: Center(child: dialog.frame(width: 660.0, height: 460.0))
+        )
+    end
+
+    overlay.insert(entry)
+
+    return handle
+end
+
+-- ============================================================================
+-- FileDialog
+-- ============================================================================
+
+export class FileDialog extends View
+    title: string
+    folder: string
+    extensions: string[]
+    onOpen: fn(string) -> nil
+    onCancel: fn() -> nil
+
+    fn init(
+        title: string,
+        folder: string,
+        extensions: string[],
+        onOpen: fn(string) -> nil,
+        onCancel: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.title = title
+        self.folder = folder
+        self.extensions = extensions
+        self.onOpen = onOpen
+        self.onCancel = onCancel
+    end
+
+    fn body(context: BuildContext) -> View
+        local folder = context.state("folder", self.folder)
+        local name = context.state("name", "")
+        local scratch = context.data().scratch
+
+        local here = folder.text(self.folder)
+        local entries = self.listing(scratch, here)
+
+        local navigate = fn(path: string)
+            folder.set(path)
+            name.set("")
+        end
+
+        -- Open what the name box says: a folder is entered, a file is the
+        -- answer. A typed absolute path works too.
+        local confirm = fn()
+            local typed = String.trim(name.text())
+
+            if typed == "" then
+                return
+            end
+
+            local path = Paths.join(here, typed)
+            if String.starts(typed, "/") then
+                path = typed
+            end
+
+            if Paths.isFolder(path) then
+                navigate(path)
+            elseif Os.fsInfo(path) != nil then
+                self.onOpen(path)
+            end
+        end
+
+        local rows: View[] = {}
+
+        for entry in entries do
+            rows[#rows + 1] = FileRow(
+                entry: entry,
+                selected: entry.name == name.text(),
+                onSelect: fn()
+                    name.set(entry.name)
+                end,
+                onOpen: fn()
+                    if entry.isFolder then
+                        navigate(Paths.join(here, entry.name))
+                    else
+                        self.onOpen(Paths.join(here, entry.name))
+                    end
+                end,
+                key: entry.name
+            )
+        end
+
+        local listing: View = Label("This folder is empty.", color: Palette.textDisabled).centered()
+
+        if #rows > 0 then
+            listing = ScrollView(
+                child: VStack(alignment: StackAlignment.Fill, sizing: StackSize.Fit, children: rows).padding(
+                    3.0
+                )
+            )
+        end
+
+        local lookIn = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            Label("Look in:").frame(width: 70.0)
+            Edges.box(
+                Label(Paths.shorten(here), color: Palette.text).padding(
+                    insets: EdgeInsets.symmetric(horizontal: 6.0)
+                ).aligned(Alignment.centerLeft()).clipped(),
+                Palette.fieldBorder,
+                Palette.field
+            ).frame(height: 26.0).expanded()
+            PushButton(label: "Up", glyph: Icons.arrowUpward, width: 70.0) do
+                navigate(Paths.parent(here))
+            end
+            PushButton(label: "Home", glyph: Icons.home, width: 84.0) do
+                navigate(Paths.home())
+            end
+        end
+
+        local body = HStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            Edges.box(listing, Palette.fieldBorder, Palette.field).expanded()
+            ImagePeek(path: Paths.join(here, name.text())).frame(width: 190.0)
+        end
+
+        local nameRow = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            Label("File name:").frame(width: 70.0)
+            Field(value: name.text()) do (text: string)
+                name.set(text)
+            end.expanded()
+            PushButton(
+                label: "Open",
+                glyph: Glyphs.check,
+                glyphColor: Palette.run,
+                width: 90.0,
+                action: confirm
+            )
+            PushButton(label: "Cancel", width: 90.0, action: self.onCancel)
+        end
+
+        local content = VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            show(lookIn)
+            body.expanded()
+            show(nameRow)
+        end
+
+        return Focus(modal: true, autofocus: true, tabStop: false, onKeyDown: fn(event: KeyEvent)
+            if event.key == "escape" then
+                self.onCancel()
+
+                return true
+            end
+
+            if event.key == "return" then
+                confirm()
+
+                return true
+            end
+
+            return false
+        end, child: DialogFrame(title: self.title, glyph: Glyphs.openGame, onClose: self.onCancel) do
+            content.padding(10.0)
+        end)
+    end
+
+    -- Read a folder once per visit, not on every rebuild.
+    local fn listing(scratch: table, folder: string) -> FileEntry[]
+        if scratch.listedFolder != folder then
+            scratch.listedFolder = folder
+            scratch.entries = Paths.list(folder, self.extensions)
+        end
+
+        return (scratch.entries as FileEntry[]?) ?? {}
+    end
+end
+
+-- One line of the listing: folder or file glyph, then the name.
+export class FileRow extends View
+    entry: FileEntry
+    selected: boolean
+    onSelect: fn() -> nil
+    onOpen: fn() -> nil
+
+    fn init(
+        entry: FileEntry,
+        selected: boolean,
+        onSelect: fn() -> nil,
+        onOpen: fn() -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.entry = entry
+        self.selected = selected
+        self.onSelect = onSelect
+        self.onOpen = onOpen
+    end
+
+    fn body(context: BuildContext) -> View
+        local glyph = Glyphs.sprite
+        local tint = Palette.info
+
+        if self.entry.isFolder then
+            glyph = Glyphs.folder
+            tint = Palette.folder
+        end
+
+        local ink = Palette.text
+        local fill: Color? = nil
+
+        if self.selected then
+            ink = Palette.textOnAccent
+            fill = Palette.selection
+        end
+
+        local row = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            Icon(glyph, Metrics.iconSize, tint)
+            Label(self.entry.name, color: ink).expanded()
+        end
+
+        return GestureArea(
+            child: Surface(
+                color: fill,
+                radius: 2.0,
+                child: row.padding(insets: EdgeInsets.symmetric(horizontal: 4.0))
+            ).frame(height: Metrics.treeRowHeight),
+            onTapDown: self.onSelect,
+            onDoubleTapAt: fn(x: float, y: float)
+                self.onOpen()
+            end
+        )
+    end
+end
+
+-- The preview column: the selected picture, and its size.
+export class ImagePeek extends View
+    path: string
+
+    fn init(path: string, key: string? = nil)
+        self.super(key)
+
+        self.path = path
+    end
+
+    fn body(context: BuildContext) -> View
+        local isImage = String.ends(String.lower(self.path), ".png") and Os.fsInfo(self.path) != nil
+        local picture: View = Label("No preview", color: Palette.textDisabled).centered()
+        local caption = ""
+
+        if isImage then
+            -- `Images.size` is zero for a file that won't decode.
+            local size = Images.size(self.path)
+            local width = size.width as integer
+            local height = size.height as integer
+            local loaded = Images.load(self.path)
+
+            if loaded != nil and width > 0 and height > 0 then
+                picture = SpritePreview(
+                    frames: {ImageRegion.whole(loaded!, width, height)},
+                    maxZoom: 4.0
+                )
+                caption = width .. " × " .. height .. " pixels"
+            end
+        end
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+            Label("Preview:")
+            Edges.box(picture, Palette.fieldBorder, Palette.field).expanded()
+            Label(caption, color: Palette.textMuted)
+        end
+    end
+end

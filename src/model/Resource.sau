@@ -1,0 +1,41 @@
+from ResourceKind import *
+from SpriteData import *
+from ObjectData import *
+
+-- ============================================================================
+-- Resource
+-- ============================================================================
+--
+-- One thing in the game: a sprite, a sound, an object, a room.
+--
+-- Every kind shares the identity (id, kind, name). What is particular to a
+-- kind hangs off it in a field of its own — `sprite` for a sprite, and so on
+-- as each editor is built. Fields rather than subclasses because Saule can't
+-- downcast: a `Resource` found by id could never be turned back into a
+-- `Sprite`, but it can always be asked for its `sprite`.
+
+export class Resource
+    -- Unique within a project, and never reused, so an open editor window
+    -- can always find the resource it belongs to.
+    id: integer
+    kind: ResourceKind
+    name: string
+
+    -- Set only on sprites.
+    sprite: SpriteData?
+
+    -- Set only on objects.
+    object: ObjectData?
+
+    fn init(id: integer, kind: ResourceKind, name: string)
+        self.id = id
+        self.kind = kind
+        self.name = name
+
+        if kind == ResourceKind.Sprite then
+            self.sprite = SpriteData()
+        elseif kind == ResourceKind.Object then
+            self.object = ObjectData()
+        end
+    end
+end

@@ -1,0 +1,34 @@
+from uikit import *
+from widgets.common import *
+
+-- ============================================================================
+-- FormRow
+-- ============================================================================
+--
+-- "Label:  [control]" on one line, with the labels of a form lined up by a
+-- shared `labelWidth`.
+--
+--     FormRow(label: "Name:", child: Field(value: name))
+
+export class FormRow extends View
+    label: string
+    labelWidth: float
+    child: View?
+
+    fn init(label: string = "", labelWidth: float = 64.0, child: View? = nil, key: string? = nil)
+        self.super(key)
+
+        self.label = label
+        self.labelWidth = labelWidth
+        self.child = claimed(child)
+    end
+
+    fn body(context: BuildContext) -> View
+        local control = self.child ?? Frame()
+
+        return HStack(alignment: StackAlignment.Center, sizing: StackSize.Fill, spacing: 6.0) do
+            Label(self.label).frame(width: self.labelWidth)
+            control.expanded()
+        end
+    end
+end

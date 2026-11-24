@@ -1,0 +1,8 @@
+-- views — the editor's screens, built from `widgets` and driven by `editor`.
+--
+--     MainWindow   the whole screen, and the one view that listens for changes
+--     shell        menu bar, tool strip, workspace
+--     resources    the resource tree
+--     editors      the inside of each kind of editor window
+
+export from MainWindow import *

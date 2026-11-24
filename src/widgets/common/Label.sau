@@ -1,0 +1,42 @@
+from uikit import *
+from theme import Palette, Metrics
+
+-- ============================================================================
+-- Label
+-- ============================================================================
+--
+-- One line of interface text in the editor's type. Given less room than it
+-- needs, it cuts itself short with an ellipsis rather than spilling over. uikit's `Text` defaults to
+-- its own (dark-theme) colours, so every caption in the editor goes through
+-- here instead of restating colour and size at each call site.
+--
+--     Label("Sprites")
+--     Label("Ctrl+N", color: Palette.textMuted)
+
+export class Label extends View
+    text: string
+    color: Color?
+    size: float
+
+    fn init(
+        text: string = "",
+        color: Color? = nil,
+        size: float = Metrics.fontSize,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.text = text
+        self.color = color
+        self.size = size
+    end
+
+    fn body(context: BuildContext) -> View
+        return Text(
+            self.text,
+            style: TextStyle(color: self.color ?? Palette.text, size: self.size),
+            softWrap: true,
+            maxLines: 1
+        )
+    end
+end

@@ -1,0 +1,83 @@
+from model import *
+
+-- ============================================================================
+-- ObjectReport
+-- ============================================================================
+--
+-- "Show Information": an object written out as plain text — its settings,
+-- then every event with its code. Handy for reading a whole object at once,
+-- or pasting it somewhere.
+--
+--     Information about object: player
+--
+--     Sprite: spr_player
+--     Solid: false
+--     …
+--
+--     Alarm (ShootRate) — 30 steps, repeats
+--         shoot()
+--
+--     Step
+--         x += speed
+
+export class ObjectReport
+    static fn describe(project: GameProject, id: integer) -> string
+        local resource = project.find(id)
+        local object = project.object(id)
+
+        if resource == nil or object == nil then
+            return "This object no longer exists."
+        end
+
+        local data = object!
+        local lines: string[] = {
+            "Information about object: " .. resource!.name,
+            "",
+            "Sprite: " .. project.nameOf(data.spriteId, "<no sprite>"),
+            "Mask: " .. project.nameOf(data.maskId, "<same as sprite>"),
+            "Parent: " .. project.nameOf(data.parentId, "<no parent>"),
+            "Visible: " .. tostring(data.visible),
+            "Solid: " .. tostring(data.solid),
+            "Persistent: " .. tostring(data.persistent),
+            "Depth: " .. data.depth,
+        }
+
+        for event in data.events do
+            ObjectReport.event(lines, project, event, "")
+        end
+
+        for inherited in project.inherited(id) do
+            local origin = " (inherited from " .. project.nameOf(inherited.ownerId) .. ")"
+            ObjectReport.event(lines, project, inherited.event, origin)
+        end
+
+        if #data.events == 0 then
+            lines[#lines + 1] = ""
+            lines[#lines + 1] = "No events."
+        end
+
+        return Table.concat(lines, "\n")
+    end
+
+    static fn event(lines: string[], project: GameProject, event: ObjectEvent, suffix: string) -> nil
+        local heading = project.eventTitle(event) .. suffix
+        local alarm = event.alarm
+
+        if alarm != nil then
+            heading = heading .. " — " .. alarm!.summary()
+        end
+
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = heading
+
+        if String.trim(event.code) == "" then
+            lines[#lines + 1] = "    (no code)"
+
+            return
+        end
+
+        for line in String.split(event.code, "\n") do
+            lines[#lines + 1] = "    " .. line
+        end
+    end
+end

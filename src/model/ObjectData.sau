@@ -1,0 +1,143 @@
+from EventKind import *
+from ObjectEvent import *
+
+-- ============================================================================
+-- ObjectData
+-- ============================================================================
+--
+-- What an object is: the sprite it shows, a few flags, its parent, and its
+-- events, each with the code that runs when it happens.
+--
+-- Other resources are referred to by id, never by name — so renaming a
+-- sprite can't break an object using it — and 0 means "none".
+
+export class ObjectData
+    spriteId: integer
+
+    -- The sprite whose shape is used for collisions; 0 means the object's
+    -- own sprite.
+    maskId: integer
+
+    -- The object this one inherits events from.
+    parentId: integer
+
+    visible: boolean
+    solid: boolean
+
+    -- Stays alive from one room into the next.
+    persistent: boolean
+
+    -- Drawing order: higher depths are drawn first, so further back.
+    depth: integer
+
+    -- Always sorted (see `ObjectEvent.before`).
+    events: ObjectEvent[]
+
+    local nextEventId: integer
+
+    fn init()
+        self.spriteId = 0
+        self.maskId = 0
+        self.parentId = 0
+        self.visible = true
+        self.solid = false
+        self.persistent = false
+        self.depth = 0
+        self.events = {}
+        self.nextEventId = 1
+    end
+
+    fn find(id: integer) -> ObjectEvent?
+        for event in self.events do
+            if event.id == id then
+                return event
+            end
+        end
+
+        return nil
+    end
+
+    -- The event (kind, detail, target), if the object has it.
+    fn slot(kind: EventKind, detail: string, target: integer) -> ObjectEvent?
+        for event in self.events do
+            if event.isSlot(kind, detail, target) then
+                return event
+            end
+        end
+
+        return nil
+    end
+
+    -- Give the event an id and file it in its place. The caller checks
+    -- first that the object doesn't already have it.
+    fn add(event: ObjectEvent) -> ObjectEvent
+        event.id = self.nextEventId
+        self.nextEventId += 1
+
+        self.events[#self.events + 1] = event
+        self.sort()
+
+        return event
+    end
+
+    fn remove(id: integer) -> boolean
+        for i = 1, #self.events do
+            if self.events[i].id == id then
+                Table.remove(self.events, i)
+
+                return true
+            end
+        end
+
+        return false
+    end
+
+    -- Put the list back in order — after an event was renamed or changed.
+    fn sort() -> nil
+        Table.sort(self.events, (a: ObjectEvent, b: ObjectEvent) => a.before(b))
+    end
+
+    -- A resource was deleted: stop referring to it. Collisions with it go
+    -- altogether, since there's nothing left to collide with. Returns the
+    -- ids of the events removed.
+    fn forget(resourceId: integer) -> integer[]
+        if self.spriteId == resourceId then
+            self.spriteId = 0
+        end
+
+        if self.maskId == resourceId then
+            self.maskId = 0
+        end
+
+        if self.parentId == resourceId then
+            self.parentId = 0
+        end
+
+        local removed: integer[] = {}
+
+        for i = #self.events, 1, -1 do
+            local event = self.events[i]
+
+            if event.kind == EventKind.Collision and event.target == resourceId then
+                removed[#removed + 1] = event.id
+                Table.remove(self.events, i)
+            end
+        end
+
+        return removed
+    end
+end
+
+-- An event an object has from a parent (or grandparent…) and doesn't
+-- replace with one of its own.
+export class InheritedEvent
+    event: ObjectEvent
+
+    -- The object it is defined on.
+    ownerId: integer
+
+    fn init(event: ObjectEvent, ownerId: integer)
+        self.event = event
+        self.ownerId = ownerId
+    end
+end

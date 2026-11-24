@@ -1,0 +1,59 @@
+-- ============================================================================
+-- ResourceKind
+-- ============================================================================
+--
+-- The nine kinds of resource a game is made of, in the order the resource
+-- tree shows them. The value doubles as the stem of a new resource's default
+-- name: the first sprite is `sprite0`, the next `sprite1`, and so on.
+
+export enum ResourceKind
+    Sprite = "sprite",
+    Sound = "sound",
+    Background = "background",
+    Path = "path",
+    Script = "script",
+    Font = "font",
+    TimeLine = "timeline",
+    Object = "object",
+    Room = "room"
+
+    -- "Sprite", "Time Line", …
+
+    fn title() -> string
+        return match self
+            case ResourceKind.Sprite then "Sprite"
+            case ResourceKind.Sound then "Sound"
+            case ResourceKind.Background then "Background"
+            case ResourceKind.Path then "Path"
+            case ResourceKind.Script then "Script"
+            case ResourceKind.Font then "Font"
+            case ResourceKind.TimeLine then "Time Line"
+            case ResourceKind.Object then "Object"
+            case ResourceKind.Room then "Room"
+        end
+    end
+
+    -- The name of the folder this kind lives in: "Sprites", "Time Lines", …
+
+    fn plural() -> string
+        return self.title() .. "s"
+    end
+end
+
+-- Every kind, in tree order. An enum can't be iterated, so the order lives
+-- here once instead of being repeated by every menu and panel.
+export class ResourceKinds
+    static fn all() -> ResourceKind[]
+        return {
+            ResourceKind.Sprite,
+            ResourceKind.Sound,
+            ResourceKind.Background,
+            ResourceKind.Path,
+            ResourceKind.Script,
+            ResourceKind.Font,
+            ResourceKind.TimeLine,
+            ResourceKind.Object,
+            ResourceKind.Room,
+        }
+    end
+end

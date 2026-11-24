@@ -1,0 +1,60 @@
+from shine import Graphics
+from uikit import *
+
+-- ============================================================================
+-- Checkerboard
+-- ============================================================================
+--
+-- The grey-and-white squares that mean "transparent" behind an image. As a
+-- view it fills whatever it is given; `Checkerboard.fill` paints the same
+-- pattern into any rectangle, for views that draw an image over it.
+
+export class Checkerboard extends View
+    cell: float
+
+    fn init(cell: float = 8.0, key: string? = nil)
+        self.super(key)
+
+        self.cell = cell
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        Checkerboard.fill(x, y, el.size.width, el.size.height, self.cell)
+    end
+
+    -- Paint the pattern into a rectangle, clipped to it.
+    static fn fill(x: float, y: float, w: float, h: float, cell: float = 8.0) -> nil
+        Color.hex(0xFFFFFF).apply()
+        Graphics.rectangle("fill", x, y, w, h)
+
+        Graphics.push("all")
+        Graphics.intersectScissor(x, y, w, h)
+        Color.hex(0xE4E4E4).apply()
+
+        local row = 0
+        local cy = 0.0
+
+        while cy < h do
+            local cx = 0.0
+
+            -- Odd rows start one cell in, which is what makes it a checkerboard.
+            if row % 2 == 1 then
+                cx = cell
+            end
+
+            while cx < w do
+                Graphics.rectangle("fill", x + cx, y + cy, cell, cell)
+                cx += cell * 2.0
+            end
+
+            cy += cell
+            row += 1
+        end
+
+        Graphics.pop()
+    end
+end

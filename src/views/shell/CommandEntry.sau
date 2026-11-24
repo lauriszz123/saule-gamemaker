@@ -1,0 +1,27 @@
+from uikit import Color
+from editor import Command
+from widgets import MenuEntry
+
+-- ============================================================================
+-- commandEntry
+-- ============================================================================
+--
+-- Turn a `Command` into a menu row: its label, its shortcut, and an action
+-- only if it can run right now — so a command that isn't built yet, or
+-- doesn't apply ("Delete" with nothing selected), shows greyed out.
+
+export fn commandEntry(command: Command, glyph: integer? = nil, glyphColor: Color? = nil) -> MenuEntry
+    local action: (fn() -> nil)? = nil
+
+    if command.isEnabled() then
+        action = () => command.run()
+    end
+
+    return MenuEntry(
+        label: command.label,
+        shortcut: command.shortcutLabel(),
+        glyph: glyph,
+        glyphColor: glyphColor,
+        action: action
+    )
+end

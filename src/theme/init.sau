@@ -1,0 +1,10 @@
+-- theme — how the editor looks.
+--
+-- Colours, sizes and icons, each named for what it is used on. Widgets and
+-- views read these instead of writing literal colours and numbers.
+
+export from Palette import *
+export from Metrics import *
+export from Glyphs import *
+export from ResourceStyle import *
+export from EventStyle import *

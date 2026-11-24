@@ -1,0 +1,46 @@
+from uikit import Color
+from model import EventKind
+from Glyphs import *
+
+-- ============================================================================
+-- EventStyle
+-- ============================================================================
+--
+-- How each kind of object event looks: its glyph and its accent colour, so
+-- the event list, the Add Event dialog and the script windows agree.
+
+export class EventStyle
+    static fn glyph(kind: EventKind) -> integer
+        return match kind
+            case EventKind.Create then Glyphs.eventCreate
+            case EventKind.Destroy then Glyphs.eventDestroy
+            case EventKind.Alarm then Glyphs.eventAlarm
+            case EventKind.Step then Glyphs.eventStep
+            case EventKind.Collision then Glyphs.eventCollision
+            case EventKind.Keyboard then Glyphs.eventKeyboard
+            case EventKind.KeyPress then Glyphs.eventKeyPress
+            case EventKind.KeyRelease then Glyphs.eventKeyRelease
+            case EventKind.Mouse then Glyphs.eventMouse
+            case EventKind.Other then Glyphs.eventOther
+            case EventKind.User then Glyphs.eventUser
+            case EventKind.Draw then Glyphs.eventDraw
+        end
+    end
+
+    static fn accent(kind: EventKind) -> Color
+        return match kind
+            case EventKind.Create then Color.hex(0xD9A400)
+            case EventKind.Destroy then Color.hex(0xC8372D)
+            case EventKind.Alarm then Color.hex(0xD9701C)
+            case EventKind.Step then Color.hex(0x2E9E44)
+            case EventKind.Collision then Color.hex(0xC0392B)
+            case EventKind.Keyboard then Color.hex(0x4D5866)
+            case EventKind.KeyPress then Color.hex(0x4D5866)
+            case EventKind.KeyRelease then Color.hex(0x4D5866)
+            case EventKind.Mouse then Color.hex(0x2F6FC7)
+            case EventKind.Other then Color.hex(0x6D6D6D)
+            case EventKind.User then Color.hex(0x8A56C9)
+            case EventKind.Draw then Color.hex(0x17938F)
+        end
+    end
+end

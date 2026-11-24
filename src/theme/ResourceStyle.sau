@@ -1,0 +1,41 @@
+from uikit import Color
+from model import ResourceKind
+from Glyphs import *
+
+-- ============================================================================
+-- ResourceStyle
+-- ============================================================================
+--
+-- How each kind of resource looks: its glyph and its accent colour. The
+-- model knows what a sprite *is*; this is the only place that knows what one
+-- looks like, so the tree, the tool strip and the editor windows all agree.
+
+export class ResourceStyle
+    static fn glyph(kind: ResourceKind) -> integer
+        return match kind
+            case ResourceKind.Sprite then Glyphs.sprite
+            case ResourceKind.Sound then Glyphs.sound
+            case ResourceKind.Background then Glyphs.background
+            case ResourceKind.Path then Glyphs.path
+            case ResourceKind.Script then Glyphs.script
+            case ResourceKind.Font then Glyphs.font
+            case ResourceKind.TimeLine then Glyphs.timeLine
+            case ResourceKind.Object then Glyphs.object
+            case ResourceKind.Room then Glyphs.room
+        end
+    end
+
+    static fn accent(kind: ResourceKind) -> Color
+        return match kind
+            case ResourceKind.Sprite then Color.hex(0xE07B24)
+            case ResourceKind.Sound then Color.hex(0x2F80C9)
+            case ResourceKind.Background then Color.hex(0x3A9A4B)
+            case ResourceKind.Path then Color.hex(0x8A56C9)
+            case ResourceKind.Script then Color.hex(0x4D5866)
+            case ResourceKind.Font then Color.hex(0xC0392B)
+            case ResourceKind.TimeLine then Color.hex(0x17938F)
+            case ResourceKind.Object then Color.hex(0x2A6FD6)
+            case ResourceKind.Room then Color.hex(0x8C6A45)
+        end
+    end
+end

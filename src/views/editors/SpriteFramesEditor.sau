@@ -1,0 +1,229 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from SpriteRegions import *
+
+-- ============================================================================
+-- SpriteFramesEditor
+-- ============================================================================
+--
+-- The Sprite Editor, opened with "Edit Sprite": every subimage of a sprite
+-- as a thumbnail, with a tool strip to add, duplicate, delete and reorder
+-- them.
+--
+--   ┌──────────────────────────────────────────────────────┐
+--   │ [+ file] [⧉] [🗑] [◀] [▶] | [props]                  │
+--   ├──────────────────────────────────────────────────────┤
+--   │ ┌────┐ ┌────┐ ┌────┐ ┌────┐                          │
+--   │ │ ▓▓ │ │ ▓▓ │ │ ▓▓ │ │ ▓▓ │                          │
+--   │ └────┘ └────┘ └────┘ └────┘                          │
+--   │ image 0 image 1 …                                    │
+--   ├──────────────────────────────────────────────────────┤
+--   │ 4 subimages · 16 × 16                                │
+--   └──────────────────────────────────────────────────────┘
+
+export class SpriteFramesEditor extends View
+    editor: Editor
+    resourceId: integer
+
+    fn init(editor: Editor, resourceId: integer, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.resourceId = resourceId
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local id = self.resourceId
+        local sprite = editor.sprite(id) ?? SpriteData()
+        local count = sprite.count()
+
+        local selected = context.state("selected", 1)
+        local current = Math.clamp(selected.int(1), 1, Math.max(count, 1))
+        local hasFrame = count > 0
+
+        local addFromFile = fn()
+            openFileDialog(
+                context,
+                title: "Add Subimages From File",
+                folder: editor.imageFolder,
+                extensions: {".png"},
+                onOpen: fn(path: string)
+                    editor.addSpriteFrames(id, path)
+                    selected.set(count + 1)
+                end
+            )
+        end
+
+        local editFrame = fn(index: integer) -> nil
+            local frame = sprite.frame(index)
+
+            if frame != nil then
+                editor.openSpriteImage(id, frame!.id)
+            end
+        end
+
+        local strip = ToolStrip() do
+            ToolButton(glyph: Icons.insertDriveFile, tooltip: "Add an empty subimage", action: fn()
+                selected.set(editor.addBlankSpriteFrame(id))
+            end)
+            ToolButton(
+                glyph: Icons.add,
+                tooltip: "Add subimages from a file",
+                color: Palette.run,
+                action: addFromFile
+            )
+            ToolButton(
+                glyph: Glyphs.pencil,
+                tooltip: "Edit the selected subimage  (double-click)",
+                color: Palette.info,
+                action: self.onlyIf(hasFrame, () => editFrame(current))
+            )
+            ToolButton(
+                glyph: Icons.contentCopy,
+                tooltip: "Duplicate the selected subimage",
+                action: self.onlyIf(hasFrame, fn()
+                    editor.duplicateSpriteFrame(id, current)
+                    selected.set(current + 1)
+                end)
+            )
+            ToolButton(
+                glyph: Icons.delete,
+                tooltip: "Delete the selected subimage",
+                color: Palette.debug,
+                action: self.onlyIf(hasFrame, () => editor.removeSpriteFrame(id, current))
+            )
+            ToolSeparator()
+            ToolButton(
+                glyph: Icons.chevronLeft,
+                tooltip: "Move the selected subimage left",
+                action: self.onlyIf(
+                    current > 1,
+                    () => selected.set(editor.moveSpriteFrame(id, current, -1))
+                )
+            )
+            ToolButton(
+                glyph: Icons.chevronRight,
+                tooltip: "Move the selected subimage right",
+                action: self.onlyIf(
+                    current < count,
+                    () => selected.set(editor.moveSpriteFrame(id, current, 1))
+                )
+            )
+            ToolSeparator()
+            ToolButton(
+                glyph: Glyphs.sprite,
+                tooltip: "Sprite properties",
+                color: ResourceStyle.accent(ResourceKind.Sprite),
+                action: () => editor.openResource(id)
+            )
+        end
+
+        local thumbs: View[] = {}
+
+        for i = 1, count do
+            thumbs[#thumbs + 1] = FrameThumb(
+                region: regionOf(sprite.frames[i]),
+                label: "image " .. (i - 1),
+                selected: i == current,
+                onSelect: () => selected.set(i),
+                onOpen: () => editFrame(i),
+                key: "frame" .. i
+            )
+        end
+
+        local gallery: View = Label(
+            "No subimages yet. Add an empty one to draw on, or some from a PNG.",
+            color: Palette.textMuted
+        ).centered()
+
+        if count > 0 then
+            gallery = ScrollView(
+                child: FlowStack(spacing: 8.0, runSpacing: 8.0, children: thumbs).padding(10.0)
+            )
+        end
+
+        local status = "No subimages"
+        if count > 0 then
+            status = count .. " subimages · " .. sprite.width() .. " × " .. sprite.height() .. " pixels"
+        end
+
+        return VStack(alignment: StackAlignment.Fill) do
+            show(strip)
+            Edges(fill: Palette.field, child: gallery).expanded()
+            Edges(
+                fill: Palette.chrome,
+                top: Palette.chromeEdge,
+                child: Label(status, color: Palette.textMuted, size: Metrics.smallFontSize).aligned(
+                    Alignment.centerLeft()
+                ).padding(insets: EdgeInsets.symmetric(horizontal: 8.0))
+            ).frame(height: 22.0)
+        end
+    end
+
+    local fn onlyIf(enabled: boolean, action: fn() -> nil) -> (fn() -> nil)?
+        if enabled then
+            return action
+        end
+
+        return nil
+    end
+end
+
+-- One subimage in the gallery: its picture and its number underneath.
+-- Double-clicking it opens the image editor on it.
+export class FrameThumb extends View
+    region: ImageRegion
+    label: string
+    selected: boolean
+    onSelect: fn() -> nil
+    onOpen: fn() -> nil
+
+    fn init(
+        region: ImageRegion,
+        label: string,
+        selected: boolean,
+        onSelect: fn() -> nil,
+        onOpen: fn() -> nil = () => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.region = region
+        self.label = label
+        self.selected = selected
+        self.onSelect = onSelect
+        self.onOpen = onOpen
+    end
+
+    fn body(context: BuildContext) -> View
+        local edge = Palette.fieldBorder
+        local fill: Color? = nil
+        local ink = Palette.textMuted
+
+        if self.selected then
+            edge = Palette.selection
+            fill = Palette.selectionInactive
+            ink = Palette.text
+        end
+
+        local card = VStack(alignment: StackAlignment.Center, spacing: 4.0) do
+            Edges.box(SpritePreview(frames: {self.region}, maxZoom: 4.0), Palette.chromeEdge).frame(
+                width: 84.0,
+                height: 84.0
+            )
+            Label(self.label, color: ink, size: Metrics.smallFontSize)
+        end
+
+        return GestureArea(
+            child: Surface(color: fill, border: edge, radius: 3.0, child: card.padding(5.0)),
+            onTapDown: self.onSelect,
+            onDoubleTapAt: fn(x: float, y: float)
+                self.onOpen()
+            end
+        )
+    end
+end

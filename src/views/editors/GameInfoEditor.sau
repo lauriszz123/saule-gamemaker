@@ -1,0 +1,37 @@
+from uikit import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- GameInfoEditor
+-- ============================================================================
+--
+-- Game Information: the text a player sees when they ask about the game.
+
+export class GameInfoEditor extends View
+    editor: Editor
+    documentId: integer
+
+    fn init(editor: Editor, documentId: integer, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.documentId = documentId
+    end
+
+    fn body(context: BuildContext) -> View
+        local workspace = self.editor.workspace
+        local documentId = self.documentId
+
+        return VStack(alignment: StackAlignment.Fill, spacing: 8.0) do
+            TextArea(placeholder: "Describe your game, its controls and its author here.").expanded()
+
+            HStack(distribution: Distribution.End, sizing: StackSize.Fill) do
+                PushButton(label: "OK", glyph: Glyphs.check, glyphColor: Palette.run, width: 90.0) do
+                    workspace.close(documentId)
+                end
+            end.frame(height: 26.0)
+        end.padding(8.0)
+    end
+end

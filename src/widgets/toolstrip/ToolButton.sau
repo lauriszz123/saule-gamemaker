@@ -1,0 +1,92 @@
+from uikit import *
+from theme import Palette, Metrics
+
+-- ============================================================================
+-- ToolButton
+-- ============================================================================
+--
+-- A square, icon-only button for the tool strip. Flat until the pointer is
+-- over it, then outlined; darker while held down. Hovering shows `tooltip`.
+--
+--     ToolButton(glyph: Glyphs.run, tooltip: "Run the game", color: Palette.run) do
+--         runGame()
+--     end
+--
+-- With no action it is drawn greyed out and ignores clicks. `selected` draws
+-- it held down — the tool currently in hand, a toggle that is on.
+
+export class ToolButton extends View
+    glyph: integer
+    tooltip: string
+    color: Color?
+    selected: boolean
+    action: (fn() -> nil)?
+
+    fn init(
+        glyph: integer,
+        tooltip: string = "",
+        color: Color? = nil,
+        selected: boolean = false,
+        key: string? = nil,
+        action: (fn() -> nil)? = nil
+    )
+        self.super(key)
+
+        self.glyph = glyph
+        self.tooltip = tooltip
+        self.color = color
+        self.selected = selected
+        self.action = action
+    end
+
+    fn body(context: BuildContext) -> View
+        local data = context.data()
+        local enabled = self.action != nil
+
+        local tint = self.color ?? Palette.text
+        if not enabled then
+            tint = Palette.textDisabled
+        end
+
+        local fill: Color? = nil
+        local edge: Color? = nil
+
+        if enabled and (data.pressed or self.selected) then
+            fill = Palette.pressed
+            edge = Palette.pressedBorder
+        elseif enabled and data.hovered then
+            fill = Palette.hover
+            edge = Palette.hoverBorder
+        end
+
+        local face = Surface(
+            color: fill,
+            border: edge,
+            radius: 3.0,
+            child: Icon(self.glyph, Metrics.toolIconSize, tint).centered()
+        ).frame(width: Metrics.toolButtonSize, height: Metrics.toolButtonSize)
+
+        local button = GestureArea(child: face, onHover: fn(inside: boolean)
+            data.hovered = inside
+            context.markNeedsBuild()
+        end, onTapDown: fn()
+            data.pressed = true
+            context.markNeedsBuild()
+        end, onTapUp: fn()
+            data.pressed = false
+            context.markNeedsBuild()
+        end, onTap: fn()
+            local action = self.action
+
+            if action != nil then
+                action!()
+            end
+        end)
+
+        if self.tooltip == "" then
+            return button
+        end
+
+        return button.help(self.tooltip)
+    end
+end

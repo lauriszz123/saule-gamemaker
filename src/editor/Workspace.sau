@@ -1,0 +1,260 @@
+from model import Signal
+from Document import *
+
+-- ============================================================================
+-- Workspace
+-- ============================================================================
+--
+-- The open documents, in stacking order: the last one is in front. Moving,
+-- resizing, maximising and closing all happen here, and every one of them
+-- emits `changed`, so the window area only ever redraws from this list.
+
+export class Workspace
+    documents: Document[]
+
+    -- Something about *which* windows there are changed: one opened, closed,
+    -- came to the front, was maximised. Menus and title bars care.
+    changed: Signal
+
+    -- Only a window's position or size changed. Fired on every step of a
+    -- drag, so it is kept apart from `changed`: nothing but the window area
+    -- needs to hear it, and that only has to lay out again, not rebuild.
+    moved: Signal
+
+    local nextId: integer
+
+    -- Where the next new window goes. Each one opens a step down and to the
+    -- right of the last, wrapping round so they never walk off screen.
+    local cascadeSlot: integer
+
+    static local cascadeStep: float = 26.0
+    static local cascadeSlots: integer = 8
+    static local minWidth: float = 220.0
+    static local minHeight: float = 140.0
+
+    fn init()
+        self.documents = {}
+        self.changed = Signal()
+        self.moved = Signal()
+        self.nextId = 1
+        self.cascadeSlot = 0
+    end
+
+    -- Open a document, or bring it forward if it is already open.
+    fn open(kind: DocumentKind, resourceId: integer, width: float, height: float, part: integer = 0) -> Document
+        for document in self.documents do
+            if document.shows(kind, resourceId, part) then
+                self.focus(document.id)
+
+                return document
+            end
+        end
+
+        local offset = (self.cascadeSlot as float) * cascadeStep + 12.0
+        self.cascadeSlot = (self.cascadeSlot + 1) % cascadeSlots
+
+        local document = Document(
+            self.nextId,
+            kind,
+            resourceId,
+            part,
+            offset,
+            offset,
+            width,
+            height
+        )
+        self.nextId += 1
+
+        self.documents[#self.documents + 1] = document
+        self.changed.emit()
+
+        return document
+    end
+
+    fn find(id: integer) -> Document?
+        for document in self.documents do
+            if document.id == id then
+                return document
+            end
+        end
+
+        return nil
+    end
+
+    -- The document in front, ignoring minimised ones.
+    fn active() -> Document?
+        for i = #self.documents, 1, -1 do
+            if not self.documents[i].minimized then
+                return self.documents[i]
+            end
+        end
+
+        return nil
+    end
+
+    -- Bring a document to the front, restoring it if it was minimised.
+    fn focus(id: integer) -> nil
+        local index = self.indexOf(id)
+
+        if index == 0 then
+            return
+        end
+
+        local document = self.documents[index]
+        local alreadyFront = index == #self.documents and not document.minimized
+
+        if alreadyFront then
+            return
+        end
+
+        Table.remove(self.documents, index)
+        self.documents[#self.documents + 1] = document
+        document.minimized = false
+
+        self.changed.emit()
+    end
+
+    fn move(id: integer, dx: float, dy: float) -> nil
+        local document = self.find(id)
+
+        if document == nil then
+            return
+        end
+
+        -- Keep the title bar reachable: never above the top edge, and never
+        -- so far left that nothing of it is left to grab.
+        document!.x = Math.max(document!.x + dx, 60.0 - document!.width)
+        document!.y = Math.max(document!.y + dy, 0.0)
+
+        self.moved.emit()
+    end
+
+    -- Put a window at `x, y` with this size, without telling anyone: the
+    -- window area does this while it lays out, when a window no longer fit
+    -- after the area shrank. It has already placed the window there.
+    fn place(id: integer, x: float, y: float, width: float, height: float) -> nil
+        local document = self.find(id)
+
+        if document == nil then
+            return
+        end
+
+        document!.x = x
+        document!.y = y
+        document!.width = width
+        document!.height = height
+    end
+
+    fn resize(id: integer, dw: float, dh: float) -> nil
+        local document = self.find(id)
+
+        if document == nil then
+            return
+        end
+
+        document!.width = Math.max(document!.width + dw, minWidth)
+        document!.height = Math.max(document!.height + dh, minHeight)
+
+        self.moved.emit()
+    end
+
+    fn toggleMaximize(id: integer) -> nil
+        local document = self.find(id)
+
+        if document == nil then
+            return
+        end
+
+        if document!.minimized then
+            document!.minimized = false
+        else
+            document!.maximized = not document!.maximized
+        end
+
+        self.focus(id)
+        self.changed.emit()
+    end
+
+    fn minimize(id: integer) -> nil
+        local document = self.find(id)
+
+        if document == nil then
+            return
+        end
+
+        document!.minimized = true
+        self.changed.emit()
+    end
+
+    fn close(id: integer) -> nil
+        local index = self.indexOf(id)
+
+        if index == 0 then
+            return
+        end
+
+        Table.remove(self.documents, index)
+        self.changed.emit()
+    end
+
+    -- Close every window editing a resource — used when it is deleted.
+    fn closeResource(resourceId: integer) -> nil
+        for i = #self.documents, 1, -1 do
+            if self.documents[i].resourceId == resourceId then
+                Table.remove(self.documents, i)
+            end
+        end
+
+        self.changed.emit()
+    end
+
+    -- Close the window showing one part of a resource, if one is open — an
+    -- image editor whose frame was deleted.
+    fn closePart(resourceId: integer, part: integer) -> nil
+        for i = #self.documents, 1, -1 do
+            if self.documents[i].resourceId == resourceId and self.documents[i].part == part then
+                Table.remove(self.documents, i)
+                self.changed.emit()
+            end
+        end
+    end
+
+    fn closeAll() -> nil
+        self.documents = {}
+        self.cascadeSlot = 0
+        self.changed.emit()
+    end
+
+    -- Restore every window and stack them diagonally from the top-left.
+    fn cascade() -> nil
+        local slot = 0
+
+        for document in self.documents do
+            local offset = (slot as float) * cascadeStep + 12.0
+
+            document.x = offset
+            document.y = offset
+            document.maximized = false
+            document.minimized = false
+            slot += 1
+        end
+
+        self.cascadeSlot = slot % cascadeSlots
+        self.changed.emit()
+    end
+
+    fn count() -> integer
+        return #self.documents
+    end
+
+    -- Position in the stacking order, or 0 when it isn't open.
+    local fn indexOf(id: integer) -> integer
+        for i = 1, #self.documents do
+            if self.documents[i].id == id then
+                return i
+            end
+        end
+
+        return 0
+    end
+end

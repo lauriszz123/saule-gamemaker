@@ -1,0 +1,186 @@
+from EventKind import *
+
+-- ============================================================================
+-- EventCatalog
+-- ============================================================================
+--
+-- The details an event can have: which step phase, which key, which mouse
+-- or other event. Kept as lists, in the order they are offered, so the Add
+-- Event dialog and an object's sorted event list agree on it.
+--
+-- A detail is stored by its `value` ("leftPressed", "space"), which is what
+-- the game will match on when it runs; `title` is only what is shown.
+
+export class EventChoice
+    value: string
+    title: string
+
+    fn init(value: string, title: string)
+        self.value = value
+        self.title = title
+    end
+end
+
+export class EventCatalog
+    static local stepList: EventChoice[]? = nil
+    static local mouseList: EventChoice[]? = nil
+    static local otherList: EventChoice[]? = nil
+    static local keyList: EventChoice[]? = nil
+
+    -- The choices for a kind, or none for a kind that has no fixed list
+    -- (Create, Alarm, Collision, …).
+    static fn choices(kind: EventKind) -> EventChoice[]
+        if kind == EventKind.Step then
+            return EventCatalog.steps()
+        elseif kind == EventKind.Mouse then
+            return EventCatalog.mouse()
+        elseif kind == EventKind.Other then
+            return EventCatalog.other()
+        elseif kind.isKey() then
+            return EventCatalog.keys()
+        end
+
+        return {}
+    end
+
+    -- The first choice of a kind: what the dialog starts on.
+    static fn first(kind: EventKind) -> string
+        local list = EventCatalog.choices(kind)
+
+        if kind == EventKind.Step then
+            return "normal"
+        end
+
+        if #list == 0 then
+            return ""
+        end
+
+        return list[1].value
+    end
+
+    -- Where a detail is in its kind's list, for sorting; 0 when it isn't.
+    static fn position(kind: EventKind, detail: string) -> integer
+        local list = EventCatalog.choices(kind)
+
+        for i = 1, #list do
+            if list[i].value == detail then
+                return i
+            end
+        end
+
+        return 0
+    end
+
+    -- How a detail is shown: "Left Pressed" for "leftPressed".
+    static fn titleOf(kind: EventKind, detail: string) -> string
+        for choice in EventCatalog.choices(kind) do
+            if choice.value == detail then
+                return choice.title
+            end
+        end
+
+        return detail
+    end
+
+    static fn steps() -> EventChoice[]
+        if stepList == nil then
+            stepList = {
+                EventChoice("begin", "Begin Step"),
+                EventChoice("normal", "Step"),
+                EventChoice("end", "End Step"),
+            }
+        end
+
+        return stepList!
+    end
+
+    static fn mouse() -> EventChoice[]
+        if mouseList == nil then
+            mouseList = {
+                EventChoice("leftButton", "Left Button"),
+                EventChoice("rightButton", "Right Button"),
+                EventChoice("middleButton", "Middle Button"),
+                EventChoice("noButton", "No Button"),
+                EventChoice("leftPressed", "Left Pressed"),
+                EventChoice("rightPressed", "Right Pressed"),
+                EventChoice("middlePressed", "Middle Pressed"),
+                EventChoice("leftReleased", "Left Released"),
+                EventChoice("rightReleased", "Right Released"),
+                EventChoice("middleReleased", "Middle Released"),
+                EventChoice("mouseEnter", "Mouse Enter"),
+                EventChoice("mouseLeave", "Mouse Leave"),
+                EventChoice("wheelUp", "Mouse Wheel Up"),
+                EventChoice("wheelDown", "Mouse Wheel Down"),
+                EventChoice("globalLeftButton", "Global Left Button"),
+                EventChoice("globalRightButton", "Global Right Button"),
+                EventChoice("globalLeftPressed", "Global Left Pressed"),
+                EventChoice("globalRightPressed", "Global Right Pressed"),
+                EventChoice("globalLeftReleased", "Global Left Released"),
+                EventChoice("globalRightReleased", "Global Right Released"),
+            }
+        end
+
+        return mouseList!
+    end
+
+    static fn other() -> EventChoice[]
+        if otherList == nil then
+            otherList = {
+                EventChoice("outsideRoom", "Outside Room"),
+                EventChoice("intersectBoundary", "Intersect Boundary"),
+                EventChoice("gameStart", "Game Start"),
+                EventChoice("gameEnd", "Game End"),
+                EventChoice("roomStart", "Room Start"),
+                EventChoice("roomEnd", "Room End"),
+                EventChoice("animationEnd", "Animation End"),
+            }
+        end
+
+        return otherList!
+    end
+
+    -- Keys by the names the window reports them under.
+    static fn keys() -> EventChoice[]
+        if keyList == nil then
+            local list: EventChoice[] = {
+                EventChoice("any", "<any key>"),
+                EventChoice("none", "<no key>"),
+                EventChoice("left", "Left"),
+                EventChoice("right", "Right"),
+                EventChoice("up", "Up"),
+                EventChoice("down", "Down"),
+                EventChoice("space", "Space"),
+                EventChoice("return", "Enter"),
+                EventChoice("escape", "Escape"),
+                EventChoice("tab", "Tab"),
+                EventChoice("backspace", "Backspace"),
+                EventChoice("delete", "Delete"),
+                EventChoice("insert", "Insert"),
+                EventChoice("home", "Home"),
+                EventChoice("end", "End"),
+                EventChoice("pageup", "Page Up"),
+                EventChoice("pagedown", "Page Down"),
+                EventChoice("lshift", "Shift"),
+                EventChoice("lctrl", "Control"),
+                EventChoice("lalt", "Alt"),
+            }
+
+            for code = 65, 90 do
+                local letter = String.char(code)
+                list[#list + 1] = EventChoice(String.lower(letter), letter)
+            end
+
+            for digit = 0, 9 do
+                list[#list + 1] = EventChoice("" .. digit, "" .. digit)
+            end
+
+            for n = 1, 12 do
+                list[#list + 1] = EventChoice("f" .. n, "F" .. n)
+            end
+
+            keyList = list
+        end
+
+        return keyList!
+    end
+end

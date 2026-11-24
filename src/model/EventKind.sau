@@ -1,0 +1,120 @@
+-- ============================================================================
+-- EventKind
+-- ============================================================================
+--
+-- The kinds of event an object can respond to. Each event an object has is
+-- one of these plus, for most kinds, a detail that says which one exactly:
+--
+--     Create, Destroy, Draw       no detail
+--     Step                        the phase: "begin", "normal" or "end"
+--     Alarm, User                 a name of the user's choosing — Alarm
+--                                 (ShootRate), User (OnHit)
+--     Collision                   the other object (by id, not detail)
+--     Keyboard, KeyPress,         the key: "left", "space", "a", …
+--     KeyRelease
+--     Mouse, Other                which one: "leftPressed", "outsideRoom", …
+--
+-- The lists of steps, keys and mouse and other events are in `EventCatalog`.
+
+export enum EventKind
+    Create = "create",
+    Destroy = "destroy",
+    Alarm = "alarm",
+    Step = "step",
+    Collision = "collision",
+    Keyboard = "keyboard",
+    Mouse = "mouse",
+    Other = "other",
+    User = "user",
+    Draw = "draw",
+    KeyPress = "keypress",
+    KeyRelease = "keyrelease"
+
+    fn title() -> string
+        return match self
+            case EventKind.Create then "Create"
+            case EventKind.Destroy then "Destroy"
+            case EventKind.Alarm then "Alarm"
+            case EventKind.Step then "Step"
+            case EventKind.Collision then "Collision"
+            case EventKind.Keyboard then "Keyboard"
+            case EventKind.Mouse then "Mouse"
+            case EventKind.Other then "Other"
+            case EventKind.User then "User"
+            case EventKind.Draw then "Draw"
+            case EventKind.KeyPress then "Key Press"
+            case EventKind.KeyRelease then "Key Release"
+        end
+    end
+
+    -- One line on when it runs, for the Add Event dialog.
+
+    fn summary() -> string
+        return match self
+            case EventKind.Create then "Runs once, when an instance is created."
+            case EventKind.Destroy then "Runs once, when an instance is destroyed."
+            case EventKind.Alarm then "A named timer. Scripts start it; when it runs out, this runs."
+            case EventKind.Step then "Runs every step (frame) of the game."
+            case EventKind.Collision then "Runs every step this instance touches one of another object."
+            case EventKind.Keyboard then "Runs every step while a key is held down."
+            case EventKind.Mouse then "Runs on a mouse button, the wheel, or the pointer entering or leaving."
+            case EventKind.Other then "Leaving the room, game and room start and end, an animation ending."
+            case EventKind.User then "A named event of your own, run from scripts by its name."
+            case EventKind.Draw then "Runs when the instance is drawn. Replaces drawing its sprite."
+            case EventKind.KeyPress then "Runs once, the step a key goes down."
+            case EventKind.KeyRelease then "Runs once, the step a key comes up."
+        end
+    end
+
+    -- Alarm and User events are told apart by a name the user gives them.
+
+    fn isNamed() -> boolean
+        return self == EventKind.Alarm or self == EventKind.User
+    end
+
+    -- Keyboard, Key Press and Key Release are told apart by a key.
+
+    fn isKey() -> boolean
+        return self == EventKind.Keyboard or self == EventKind.KeyPress or self == EventKind.KeyRelease
+    end
+
+    -- Where it sorts in an object's event list: the order they happen in a
+    -- step, more or less, the way GameMaker lists them.
+
+    fn rank() -> integer
+        return match self
+            case EventKind.Create then 1
+            case EventKind.Destroy then 2
+            case EventKind.Alarm then 3
+            case EventKind.Step then 4
+            case EventKind.Collision then 5
+            case EventKind.Keyboard then 6
+            case EventKind.KeyPress then 7
+            case EventKind.KeyRelease then 8
+            case EventKind.Mouse then 9
+            case EventKind.Other then 10
+            case EventKind.User then 11
+            case EventKind.Draw then 12
+        end
+    end
+end
+
+-- Every kind, in the order the Add Event dialog offers them.
+export class EventKinds
+    static fn all() -> EventKind[]
+        return {
+            EventKind.Create,
+            EventKind.Destroy,
+            EventKind.Alarm,
+            EventKind.Step,
+            EventKind.Collision,
+            EventKind.Keyboard,
+            EventKind.KeyPress,
+            EventKind.KeyRelease,
+            EventKind.Mouse,
+            EventKind.Other,
+            EventKind.User,
+            EventKind.Draw,
+        }
+    end
+end

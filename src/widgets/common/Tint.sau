@@ -1,0 +1,37 @@
+from shine import Graphics
+from uikit import *
+
+-- ============================================================================
+-- Tint
+-- ============================================================================
+--
+-- A translucent wash painted *over* a subtree — how an editor window that
+-- isn't focused shows itself greyed out. It only changes the picture: the
+-- views underneath still hover, take clicks and type as usual, so a click on
+-- a washed-out window both focuses it and does what was clicked.
+--
+--     Tint(color: Palette.inactiveWash, child: content)
+--
+-- With no colour it draws nothing extra, so a window can switch it on and
+-- off without its content being rebuilt.
+
+export class Tint extends SingleChildView
+    color: Color?
+
+    fn init(color: Color? = nil, child: View? = nil, key: string? = nil)
+        self.super(child, key)
+
+        self.color = color
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        el.paintChildren(x, y)
+
+        local wash = self.color
+
+        if wash != nil then
+            wash.apply()
+            Graphics.rectangle("fill", x, y, el.size.width, el.size.height)
+        end
+    end
+end

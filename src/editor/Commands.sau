@@ -1,0 +1,231 @@
+from model import *
+from Shortcut import *
+from Command import *
+from Editor import *
+
+-- ============================================================================
+-- Commands
+-- ============================================================================
+--
+-- Every command the editor offers, built once for an `Editor`. The menus,
+-- the tool strip and the keyboard all take their commands from here.
+--
+-- Commands without an action are the parts not built yet. They are listed
+-- anyway so the menus already have their final shape, and they light up as
+-- each one is implemented.
+
+export class Commands
+    -- File
+    newGame: Command
+    openGame: Command
+    saveGame: Command
+    saveGameAs: Command
+    createExecutable: Command
+    publishGame: Command
+    importResources: Command
+    exportResources: Command
+    preferences: Command
+    exit: Command
+
+    -- Edit
+    createGroup: Command
+    rename: Command
+    properties: Command
+    delete: Command
+    duplicate: Command
+    expandAll: Command
+    collapseAll: Command
+
+    -- Resources: one "Create …" per kind, plus the game-wide ones.
+    gameInformation: Command
+    gameSettings: Command
+    extensionPackages: Command
+    defineConstants: Command
+    includedFiles: Command
+
+    -- Scripts
+    importScripts: Command
+    exportScripts: Command
+    builtinVariables: Command
+    builtinFunctions: Command
+    searchInScripts: Command
+    checkScripts: Command
+
+    -- Run
+    runNormally: Command
+    runDebug: Command
+
+    -- Window
+    cascade: Command
+    closeAll: Command
+
+    -- Help
+    contents: Command
+    about: Command
+
+    local creators: table<string, Command>
+
+    fn init(editor: Editor, quit: fn() -> nil)
+        local hasSelection = () => editor.selected() != nil
+
+        self.newGame = Command("New", Shortcut("n", ctrl: true)) do
+            editor.newGame()
+        end
+        self.openGame = Command("Open...", Shortcut("o", ctrl: true))
+        self.saveGame = Command("Save", Shortcut("s", ctrl: true))
+        self.saveGameAs = Command("Save As...")
+        self.createExecutable = Command("Create Executable...")
+        self.publishGame = Command("Publish your Game...")
+        self.importResources = Command("Import Resources...")
+        self.exportResources = Command("Export Resources...")
+        self.preferences = Command("Preferences...")
+        self.exit = Command("Exit", Shortcut("f4", alt: true), action: quit)
+
+        self.createGroup = Command("Create Group")
+        self.rename = Command("Rename", Shortcut("f2"))
+        self.properties = Command(
+            "Properties",
+            Shortcut("return", alt: true),
+            enabledWhen: hasSelection
+        ) do
+            editor.openResource(editor.selectedResource)
+        end
+        self.delete = Command("Delete", Shortcut("delete", shift: true), enabledWhen: hasSelection) do
+            editor.deleteResource(editor.selectedResource)
+        end
+        self.duplicate = Command("Duplicate", Shortcut("d", alt: true))
+        self.expandAll = Command("Expand Resource Tree") do
+            editor.setAllExpanded(true)
+        end
+        self.collapseAll = Command("Collapse Resource Tree") do
+            editor.setAllExpanded(false)
+        end
+
+        self.creators = {}
+
+        for kind in ResourceKinds.all() do
+            self.creators[kind.value] = Command(
+                "Create " .. kind.title(),
+                Commands.createShortcut(kind)
+            ) do
+                editor.createResource(kind)
+            end
+        end
+
+        self.gameInformation = Command("Game Information", Shortcut("i", ctrl: true, shift: true)) do
+            editor.openGameInformation()
+        end
+        self.gameSettings = Command("Global Game Settings", Shortcut("g", ctrl: true, shift: true)) do
+            editor.openGameSettings()
+        end
+        self.extensionPackages = Command("Select Extension Packages...")
+        self.defineConstants = Command("Define Constants...")
+        self.includedFiles = Command("Included Files...")
+
+        self.importScripts = Command("Import Scripts...")
+        self.exportScripts = Command("Export Scripts...")
+        self.builtinVariables = Command("Show Built-in Variables")
+        self.builtinFunctions = Command("Show Built-in Functions")
+        self.searchInScripts = Command("Search in Scripts...")
+        self.checkScripts = Command("Check All Scripts")
+
+        self.runNormally = Command("Run normally", Shortcut("f5"))
+        self.runDebug = Command("Run in Debug mode", Shortcut("f6"))
+
+        self.cascade = Command("Cascade", enabledWhen: () => editor.workspace.count() > 0) do
+            editor.workspace.cascade()
+        end
+        self.closeAll = Command("Close All", enabledWhen: () => editor.workspace.count() > 0) do
+            editor.workspace.closeAll()
+        end
+
+        self.contents = Command("Contents...", Shortcut("f1"))
+        self.about = Command("About...")
+    end
+
+    -- "Create Sprite", "Create Room", …
+    fn create(kind: ResourceKind) -> Command
+        return self.creators[kind.value]!
+    end
+
+    -- Ctrl+Shift+ the kind's initial: S for sprite, O for object, and so on.
+    -- Sound and Script share an S, so sound takes U; time line takes T.
+    static fn createShortcut(kind: ResourceKind) -> Shortcut
+        local key = match kind
+            case ResourceKind.Sprite then "s"
+            case ResourceKind.Sound then "u"
+            case ResourceKind.Background then "b"
+            case ResourceKind.Path then "p"
+            case ResourceKind.Script then "c"
+            case ResourceKind.Font then "f"
+            case ResourceKind.TimeLine then "t"
+            case ResourceKind.Object then "o"
+            case ResourceKind.Room then "r"
+        end
+
+        return Shortcut(key, ctrl: true, shift: true)
+    end
+
+    -- Every command, for matching key presses.
+    fn all() -> Command[]
+        local list: Command[] = {
+            self.newGame,
+            self.openGame,
+            self.saveGame,
+            self.saveGameAs,
+            self.createExecutable,
+            self.publishGame,
+            self.importResources,
+            self.exportResources,
+            self.preferences,
+            self.exit,
+            self.createGroup,
+            self.rename,
+            self.properties,
+            self.delete,
+            self.duplicate,
+            self.expandAll,
+            self.collapseAll,
+            self.gameInformation,
+            self.gameSettings,
+            self.extensionPackages,
+            self.defineConstants,
+            self.includedFiles,
+            self.importScripts,
+            self.exportScripts,
+            self.builtinVariables,
+            self.builtinFunctions,
+            self.searchInScripts,
+            self.checkScripts,
+            self.runNormally,
+            self.runDebug,
+            self.cascade,
+            self.closeAll,
+            self.contents,
+            self.about,
+        }
+
+        for kind in ResourceKinds.all() do
+            list[#list + 1] = self.create(kind)
+        end
+
+        return list
+    end
+
+    -- Run the command bound to this key press, if there is one. Returns
+    -- whether a shortcut matched, enabled or not, so the key is consumed
+    -- either way.
+    fn dispatch(key: string, ctrl: boolean, shift: boolean, alt: boolean) -> boolean
+        for command in self.all() do
+            local shortcut = command.shortcut
+
+            if shortcut != nil and shortcut!.matches(key, ctrl, shift, alt) then
+                command.run()
+
+                return true
+            end
+        end
+
+        return false
+    end
+end

@@ -1,0 +1,73 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+
+-- ============================================================================
+-- MainToolStrip
+-- ============================================================================
+--
+-- The tool buttons under the menu bar, in the classic order:
+--
+--   file | build | run | one "create" button per resource kind | game-wide | help
+
+export class MainToolStrip extends View
+    commands: Commands
+
+    fn init(commands: Commands, key: string? = nil)
+        self.super(key)
+
+        self.commands = commands
+    end
+
+    fn body(context: BuildContext) -> View
+        local c = self.commands
+
+        return ToolStrip() do
+            self.button(c.newGame, Glyphs.newGame, nil)
+            self.button(c.openGame, Glyphs.openGame, Palette.folder)
+            self.button(c.saveGame, Glyphs.saveGame, nil)
+            ToolSeparator()
+
+            self.button(c.createExecutable, Glyphs.createExecutable, nil)
+            self.button(c.publishGame, Glyphs.publish, nil)
+            ToolSeparator()
+
+            self.button(c.runNormally, Glyphs.run, Palette.run)
+            self.button(c.runDebug, Glyphs.debug, Palette.debug)
+            ToolSeparator()
+
+            for kind in ResourceKinds.all() do
+                self.button(c.create(kind), ResourceStyle.glyph(kind), ResourceStyle.accent(kind))
+            end
+
+            ToolSeparator()
+
+            self.button(c.gameInformation, Glyphs.gameInfo, Palette.info)
+            self.button(c.gameSettings, Glyphs.gameSettings, nil)
+            self.button(c.extensionPackages, Glyphs.extensions, nil)
+            ToolSeparator()
+
+            self.button(c.contents, Glyphs.help, Palette.info)
+        end
+    end
+
+    -- A tool button that runs `command`, with its label and shortcut as the
+    -- tooltip.
+    local fn button(command: Command, glyph: integer, color: Color?) -> View
+        local tip = command.label
+        local keys = command.shortcutLabel()
+
+        if keys != "" then
+            tip = tip .. "  (" .. keys .. ")"
+        end
+
+        local action: (fn() -> nil)? = nil
+        if command.isEnabled() then
+            action = () => command.run()
+        end
+
+        return ToolButton(glyph: glyph, tooltip: tip, color: color, action: action)
+    end
+end

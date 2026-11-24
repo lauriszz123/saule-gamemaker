@@ -1,0 +1,15 @@
+-- editor — the editing session.
+--
+-- What the user is doing to the game: which windows are open, what is
+-- selected, and the commands they can run. It changes the `model` and tells
+-- the views; it draws nothing itself.
+
+export from Document import *
+export from Workspace import *
+export from SpriteImporter import *
+export from ObjectReport import *
+export from ImageSession import *
+export from Shortcut import *
+export from Command import *
+export from Editor import *
+export from Commands import *

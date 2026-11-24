@@ -1,0 +1,91 @@
+from ResourceKind import *
+from Resource import *
+
+-- ============================================================================
+-- ResourceGroup
+-- ============================================================================
+--
+-- A folder in the resource tree. Every kind has one root group ("Sprites",
+-- "Objects", …) and groups can nest, so a big game can file its sprites
+-- under "Player", "Enemies" and so on.
+
+export class ResourceGroup
+    name: string
+    kind: ResourceKind
+    groups: ResourceGroup[]
+    resources: Resource[]
+
+    fn init(name: string, kind: ResourceKind)
+        self.name = name
+        self.kind = kind
+        self.groups = {}
+        self.resources = {}
+    end
+
+    fn add(resource: Resource) -> nil
+        self.resources[#self.resources + 1] = resource
+    end
+
+    fn addGroup(group: ResourceGroup) -> nil
+        self.groups[#self.groups + 1] = group
+    end
+
+    -- Remove a resource from this group or any group below it.
+    fn remove(id: integer) -> boolean
+        for i = 1, #self.resources do
+            if self.resources[i].id == id then
+                Table.remove(self.resources, i)
+
+                return true
+            end
+        end
+
+        for group in self.groups do
+            if group.remove(id) then
+                return true
+            end
+        end
+
+        return false
+    end
+
+    fn find(id: integer) -> Resource?
+        for resource in self.resources do
+            if resource.id == id then
+                return resource
+            end
+        end
+
+        for group in self.groups do
+            local found = group.find(id)
+
+            if found != nil then
+                return found
+            end
+        end
+
+        return nil
+    end
+
+    -- Every resource in here and in the groups below, in tree order.
+    fn collect(into: Resource[]) -> nil
+        for resource in self.resources do
+            into[#into + 1] = resource
+        end
+
+        for group in self.groups do
+            group.collect(into)
+        end
+    end
+
+    -- How many resources are in here, counting subgroups.
+    fn count() -> integer
+        local total = #self.resources
+
+        for group in self.groups do
+            total += group.count()
+        end
+
+        return total
+    end
+end

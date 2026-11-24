@@ -1,0 +1,91 @@
+from shine import Window
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from views.shell import *
+from views.resources import *
+
+-- ============================================================================
+-- MainWindow
+-- ============================================================================
+--
+-- The whole editor screen:
+--
+--   ┌──────────────────────────────────────────────────────────┐
+--   │ File  Edit  Resources  Scripts  Run  Window  Help        │  MainMenu
+--   ├──────────────────────────────────────────────────────────┤
+--   │ [new][open][save] | [▶][🐞] | [sprite][sound]… | [?]     │  MainToolStrip
+--   ├────────────┬─────────────────────────────────────────────┤
+--   │ ▸ Sprites  │                                             │
+--   │ ▸ Sounds   │       editor windows float here             │  WorkspaceView
+--   │ …          │                                             │
+--   │ ResourceTreePanel                                        │
+--   └────────────┴─────────────────────────────────────────────┘
+--
+-- It is the one place that listens to the editor. Whenever anything changes,
+-- it rebuilds, and every panel below redraws from the editor's current state
+-- — so no panel has to keep its own copy of anything, and none can go stale.
+
+export class MainWindow extends StatefulView
+    editor: Editor
+
+    fn init(editor: Editor, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+    end
+
+    fn createState() -> State?
+        return MainWindowState(self.editor)
+    end
+end
+
+class MainWindowState extends State
+    local editor: Editor
+    local commands: Commands
+    local listener: integer
+
+    fn init(editor: Editor)
+        self.super()
+
+        self.editor = editor
+        self.commands = Commands(editor, () => Window.close())
+        self.listener = 0
+    end
+
+    fn initState() -> nil
+        local refresh = fn() -> nil
+            self.setState(() => nil)
+        end
+
+        self.listener = self.editor.changed.connect(refresh)
+    end
+
+    fn dispose() -> nil
+        self.editor.changed.disconnect(self.listener)
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local commands = self.commands
+
+        local layout = VStack(alignment: StackAlignment.Fill) do
+            MainMenu(editor, commands)
+            MainToolStrip(commands)
+
+            SplitPane(
+                leading: ResourceTreePanel(editor, commands),
+                trailing: WorkspaceView(editor, commands),
+                initial: Metrics.treeWidth
+            ).expanded()
+        end
+
+        -- Shortcuts are checked last, after whatever has focus has had its
+        -- chance — so typing in a field is never hijacked by a menu key.
+        return KeyboardListener(onKeyDown: fn(event: KeyEvent)
+            return commands.dispatch(event.key, event.command(), event.shift, event.alt)
+        end, child: layout.background(Palette.chrome))
+    end
+end

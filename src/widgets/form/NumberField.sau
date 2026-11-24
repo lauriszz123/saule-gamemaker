@@ -1,0 +1,46 @@
+from uikit import *
+from util import Parse
+from Field import *
+
+-- ============================================================================
+-- NumberField
+-- ============================================================================
+--
+-- A `Field` for whole numbers. It reports a new value only when the text
+-- reads as one, so a half-typed "-" or an empty box never reaches the model
+-- as garbage.
+--
+--     NumberField(value: sprite.originX) do (x: integer)
+--         editor.setSpriteOrigin(id, x, sprite.originY)
+--     end
+
+export class NumberField extends View
+    value: integer
+    width: float?
+    onChanged: (fn(integer) -> nil)?
+
+    fn init(
+        value: integer = 0,
+        width: float? = nil,
+        key: string? = nil,
+        onChanged: (fn(integer) -> nil)? = nil
+    )
+        self.super(key)
+
+        self.value = value
+        self.width = width
+        self.onChanged = onChanged
+    end
+
+    fn body(context: BuildContext) -> View
+        local changed = self.onChanged
+
+        return Field(value: "" .. self.value, width: self.width) do (text: string)
+            local parsed = Parse.integer(text)
+
+            if parsed != nil and changed != nil then
+                changed!(parsed!)
+            end
+        end
+    end
+end

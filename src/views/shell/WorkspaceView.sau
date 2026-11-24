@@ -1,0 +1,172 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from views.editors import *
+from CommandEntry import *
+
+-- ============================================================================
+-- WorkspaceView
+-- ============================================================================
+--
+-- The grey area right of the tree, where editor windows open. It turns the
+-- workspace's documents into `MdiFrame`s, and the user's moves, resizes and
+-- closes back into workspace calls.
+--
+-- Rebuilding happens through `MainWindow` when *which* windows there are
+-- changes. A window merely moving is heard here, from `workspace.moved`, and
+-- answered with a relayout of the window area alone — so dragging a window
+-- costs a layout pass, not a rebuild of every editor on screen.
+
+export class WorkspaceView extends StatefulView
+    editor: Editor
+    commands: Commands
+
+    fn init(editor: Editor, commands: Commands, key: string? = nil)
+        self.super(key)
+
+        self.editor = editor
+        self.commands = commands
+    end
+
+    fn createState() -> State?
+        return WorkspaceState(self.editor, self.commands)
+    end
+end
+
+class WorkspaceState extends State
+    local editor: Editor
+    local commands: Commands
+    local relayout: MdiRelayout
+    local listener: integer
+
+    fn init(editor: Editor, commands: Commands)
+        self.super()
+
+        self.editor = editor
+        self.commands = commands
+        self.relayout = MdiRelayout()
+        self.listener = 0
+    end
+
+    fn initState() -> nil
+        local relayout = self.relayout
+
+        self.listener = self.editor.workspace.moved.connect(() => relayout.relayout())
+    end
+
+    fn dispose() -> nil
+        self.editor.workspace.moved.disconnect(self.listener)
+    end
+
+    fn body(context: BuildContext) -> View
+        local editor = self.editor
+        local workspace = editor.workspace
+        local active = workspace.active()
+        local frames: MdiFrame[] = {}
+
+        -- Frames are identified by string; this leads each back to its document.
+        local ids: table<string, integer> = {}
+
+        for document in workspace.documents do
+            local glyph: integer, tint: Color? = self.glyphOf(document)
+            local frameId = "doc" .. document.id
+
+            ids[frameId] = document.id
+
+            frames[#frames + 1] = MdiFrame(
+                id: frameId,
+                title: editor.titleOf(document),
+                glyph: glyph,
+                glyphColor: tint,
+                x: document.x,
+                y: document.y,
+                width: document.width,
+                height: document.height,
+                active: active != nil and active!.id == document.id,
+                maximized: document.maximized,
+                minimized: document.minimized,
+                content: DocumentContent(editor, document, key: "content" .. document.id)
+            )
+        end
+
+        local documentId = fn(frameId: string) -> integer
+            return ids[frameId] ?? 0
+        end
+
+        -- Read at layout time, so a moved window is placed from where its
+        -- document is now, not where it was when this was built.
+        local geometry = fn(frameId: string) -> Rect?
+            local document = workspace.find(documentId(frameId))
+
+            if document == nil then
+                return nil
+            end
+
+            return Rect(document!.x, document!.y, document!.width, document!.height)
+        end
+
+        return MdiArea(
+            frames: frames,
+            geometry: geometry,
+            relayout: self.relayout,
+            onActivate: fn(id: string)
+                workspace.focus(documentId(id))
+            end,
+            onMove: fn(id: string, dx: float, dy: float)
+                workspace.move(documentId(id), dx, dy)
+            end,
+            onResize: fn(id: string, dx: float, dy: float)
+                workspace.resize(documentId(id), dx, dy)
+            end,
+            onMinimize: fn(id: string)
+                workspace.minimize(documentId(id))
+            end,
+            onMaximize: fn(id: string)
+                workspace.toggleMaximize(documentId(id))
+            end,
+            onClose: fn(id: string)
+                workspace.close(documentId(id))
+            end,
+            onFit: fn(id: string, rect: Rect)
+                workspace.place(documentId(id), rect.x, rect.y, rect.width, rect.height)
+            end,
+            onBackdropMenu: fn(x: float, y: float)
+                openMenuPopup(
+                    context,
+                    x,
+                    y,
+                    {
+                        commandEntry(self.commands.cascade),
+                        commandEntry(self.commands.closeAll),
+                    },
+                    Metrics.menuWidth
+                )
+            end
+        )
+    end
+
+    -- The glyph a document's title bar shows.
+    local fn glyphOf(document: Document) -> (integer, Color?)
+        if document.kind == DocumentKind.GameInformation then
+            return Glyphs.gameInfo, Palette.info
+        end
+
+        if document.kind == DocumentKind.GameSettings then
+            return Glyphs.gameSettings, nil
+        end
+
+        if document.kind == DocumentKind.EventScript then
+            return Glyphs.script, ResourceStyle.accent(ResourceKind.Script)
+        end
+
+        local resource = self.editor.project.find(document.resourceId)
+
+        if resource == nil then
+            return Glyphs.close, nil
+        end
+
+        return ResourceStyle.glyph(resource!.kind), ResourceStyle.accent(resource!.kind)
+    end
+end

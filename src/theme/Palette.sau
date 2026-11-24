@@ -1,0 +1,86 @@
+from uikit import Color, ThemeData, TextStyle
+
+-- ============================================================================
+-- Palette
+-- ============================================================================
+--
+-- Every colour the editor draws with, named for what it is used on rather
+-- than for its hue. Change the look here and nowhere else.
+--
+-- The look is the classic desktop one: light grey chrome, a white resource
+-- tree, a darker grey workspace behind the editor windows.
+
+export class Palette
+    -- --- Chrome: menu bar, tool strip, panels, dialogs ---------------------
+
+    static chrome: Color = Color.hex(0xF0F0F0)
+    static chromeDark: Color = Color.hex(0xE1E1E1)
+    static chromeEdge: Color = Color.hex(0xC8C8C8)
+
+    -- A one-pixel bevel: light on the top/left, shadow on the bottom/right.
+    static bevelLight: Color = Color.hex(0xFFFFFF)
+    static bevelShadow: Color = Color.hex(0xA0A0A0)
+
+    -- --- Content: tree, list boxes, text fields -----------------------------
+
+    static field: Color = Color.hex(0xFFFFFF)
+    static fieldBorder: Color = Color.hex(0xABADB3)
+
+    -- --- Text ---------------------------------------------------------------
+
+    static text: Color = Color.hex(0x1E1E1E)
+    static textMuted: Color = Color.hex(0x6D6D6D)
+    static textDisabled: Color = Color.hex(0xA6A6A6)
+    static textOnAccent: Color = Color.hex(0xFFFFFF)
+
+    -- --- Interaction --------------------------------------------------------
+
+    static hover: Color = Color.hex(0xE5F1FB)
+    static hoverBorder: Color = Color.hex(0xCCE4F7)
+    static pressed: Color = Color.hex(0xCCE4F7)
+    static pressedBorder: Color = Color.hex(0x99C9EF)
+    static selection: Color = Color.hex(0x0078D7)
+    static selectionInactive: Color = Color.hex(0xCDE8FF)
+
+    -- --- Workspace and its windows -------------------------------------------
+
+    static workspace: Color = Color.hex(0x8A8D93)
+
+    static windowFrame: Color = Color.hex(0x5F6670)
+    static titleActive: Color = Color.hex(0x2B5797)
+    static titleActiveEnd: Color = Color.hex(0x3F78C2)
+    static titleInactive: Color = Color.hex(0xC9D3DF)
+    static titleText: Color = Color.hex(0xFFFFFF)
+    static titleTextInactive: Color = Color.hex(0x4A5563)
+    static shadow: Color = Color.rgba(0, 0, 0, 0.07)
+
+    -- Washed over the content of a window that isn't focused.
+    static inactiveWash: Color = Color.rgba(232, 232, 232, 0.55)
+
+    -- --- Accents ------------------------------------------------------------
+
+    static folder: Color = Color.hex(0xDDA53B)
+    static run: Color = Color.hex(0x2E9E44)
+    static debug: Color = Color.hex(0xC8372D)
+    static info: Color = Color.hex(0x2F6FC7)
+
+    -- The same palette as a uikit `ThemeData`, so the kit's own controls
+    -- (text fields, scroll bars, checkboxes) match the chrome around them.
+    static fn themeData() -> ThemeData
+        return ThemeData(
+            background: Palette.chrome,
+            surface: Palette.field,
+            surfaceLight: Palette.chromeDark,
+            border: Palette.fieldBorder,
+            text: Palette.text,
+            textMuted: Palette.textMuted,
+            primary: Palette.selection,
+            selection: Palette.selection.withAlpha(0.30),
+            body: TextStyle(color: Palette.text, size: 13.0),
+            title: TextStyle(color: Palette.text, size: 16.0),
+            caption: TextStyle(color: Palette.textMuted, size: 12.0),
+            radius: 2.0,
+            spacing: 6.0
+        )
+    end
+end

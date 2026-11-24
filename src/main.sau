@@ -1,0 +1,21 @@
+from uikit import App
+from app import EditorApp
+
+--[[
+Saule Maker — a game maker written in Saule.
+
+The source is layered; each folder only uses the ones above it:
+
+    model     what a game is: resources, groups, the project
+    editor    the editing session: open windows, selection, commands
+    theme     colours, sizes and icons
+    widgets   reusable interface components
+    views     the editor's screens, built from widgets
+    app       the window that holds it all
+]]
+
+class Main
+    static fn main()
+        EditorApp().run()
+    end
+end

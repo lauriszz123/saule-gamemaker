@@ -1,0 +1,33 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from ResourceEditor import *
+
+-- ============================================================================
+-- RoomEditor
+-- ============================================================================
+--
+-- Room Properties: the room's settings on the left, the room itself on the
+-- right as a snap grid that instances will be placed on.
+
+export class RoomEditor extends ResourceEditor
+    fn init(editor: Editor, resource: Resource, documentId: integer, key: string? = nil)
+        self.super(editor, resource, documentId, key)
+    end
+
+    fn properties(context: BuildContext) -> View[]
+        return {
+            FormRow(label: "Caption:", labelWidth: 56.0, child: Field(value: "")),
+            FormRow(label: "Width:", labelWidth: 56.0, child: Field(value: "640")),
+            FormRow(label: "Height:", labelWidth: 56.0, child: Field(value: "480")),
+            FormRow(label: "Speed:", labelWidth: 56.0, child: Field(value: "30")),
+            Checkbox(value: false, label: "Persistent"),
+        }
+    end
+
+    fn workArea(context: BuildContext) -> View?
+        return Edges.box(GridCanvas(), Palette.fieldBorder)
+    end
+end

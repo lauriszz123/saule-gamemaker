@@ -1,0 +1,147 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+from Menu import *
+from MenuPopup import *
+
+-- ============================================================================
+-- MenuBar
+-- ============================================================================
+--
+-- The row of menu titles across the top of the window.
+--
+--     MenuBar(menus: {
+--         Menu("File", {…}),
+--         Menu("Edit", {…}),
+--     })
+--
+-- It behaves the way a desktop menu bar does: click a title to drop its menu,
+-- then just *slide* along the bar and each title you pass over opens in turn.
+-- Clicking the open title again, clicking away, or Escape closes it.
+--
+-- Which menu is open lives in the bar's own element state, so nothing outside
+-- has to track it.
+
+export class MenuBar extends View
+    menus: Menu[]
+
+    fn init(menus: Menu[], key: string? = nil)
+        self.super(key)
+
+        self.menus = menus
+    end
+
+    fn body(context: BuildContext) -> View
+        local open = context.state("open", 0)
+        local scratch = context.data().scratch
+
+        -- Drop menu `index` below the title whose element is `anchor`. Any
+        -- menu already open is swapped out without counting as a dismissal.
+        local openAt = fn(index: integer, anchor: Element)
+            local previous = scratch.handle as OverlayHandle?
+            previous?.close()
+
+            local origin = absoluteOf(anchor)
+
+            scratch.handle = openMenuPopup(
+                context,
+                origin.dx,
+                origin.dy + anchor.size.height,
+                self.menus[index].entries,
+                Metrics.menuWidth,
+                fn()
+                    if open.int() == index then
+                        scratch.handle = nil
+                        open.set(0)
+                    end
+                end
+            )
+
+            open.set(index)
+        end
+
+        local titles: View[] = {}
+
+        for i = 1, #self.menus do
+            titles[#titles + 1] = MenuBarTitle(
+                title: self.menus[i].title,
+                isOpen: open.int() == i,
+                onPress: fn(anchor: Element)
+                    openAt(i, anchor)
+                end,
+                onEnter: fn(anchor: Element)
+                    -- Sliding across the bar while a menu is down opens the
+                    -- menu under the pointer instead.
+                    if open.int() != 0 and open.int() != i then
+                        openAt(i, anchor)
+                    end
+                end
+            )
+        end
+
+        local row = HStack(alignment: StackAlignment.Fill, spacing: 0.0, children: titles)
+
+        return Edges(
+            fill: Palette.chrome,
+            bottom: Palette.chromeEdge,
+            child: row.padding(insets: EdgeInsets.symmetric(horizontal: 2.0, vertical: 1.0))
+        ).frame(height: Metrics.menuBarHeight)
+    end
+end
+
+-- One title on the bar: "File", "Edit", …
+export class MenuBarTitle extends View
+    title: string
+    isOpen: boolean
+    onPress: fn(Element) -> nil
+    onEnter: fn(Element) -> nil
+
+    fn init(
+        title: string,
+        isOpen: boolean,
+        onPress: fn(Element) -> nil,
+        onEnter: fn(Element) -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.title = title
+        self.isOpen = isOpen
+        self.onPress = onPress
+        self.onEnter = onEnter
+    end
+
+    fn body(context: BuildContext) -> View
+        local data = context.data()
+
+        local fill: Color? = nil
+        local edge: Color? = nil
+
+        if self.isOpen then
+            fill = Palette.pressed
+            edge = Palette.pressedBorder
+        elseif data.hovered then
+            fill = Palette.hover
+            edge = Palette.hoverBorder
+        end
+
+        local label = Label(self.title).centered().padding(
+            insets: EdgeInsets.symmetric(horizontal: 9.0)
+        )
+
+        return GestureArea(
+            child: Surface(color: fill, border: edge, radius: 2.0, child: label),
+            onTapDown: fn()
+                self.onPress(context.element())
+            end,
+            onHover: fn(inside: boolean)
+                data.hovered = inside
+                context.markNeedsBuild()
+
+                if inside then
+                    self.onEnter(context.element())
+                end
+            end
+        )
+    end
+end

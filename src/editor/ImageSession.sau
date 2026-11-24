@@ -1,0 +1,279 @@
+from shine import Image
+
+-- ============================================================================
+-- ImageSession
+-- ============================================================================
+--
+-- One image being painted on: the tool in hand, the two colours, the stroke
+-- in progress, and undo / redo. The image editor window owns one of these
+-- and forwards the pointer to it; everything the tools *do* happens here, so
+-- the window is only a picture of this state.
+--
+-- Two colours, the way GameMaker has them: the left mouse button paints with
+-- `leftColor`, the right button with `rightColor`. Colours are packed
+-- `0xAARRGGBB`; `0` is fully transparent, which is what the eraser paints.
+--
+-- How shapes preview: pressing takes a snapshot of the image. Every drag
+-- step puts the snapshot back and draws the shape afresh to where the
+-- pointer is now, so the line or rectangle follows the pointer without
+-- smearing. Releasing keeps the last one, and the snapshot becomes the undo
+-- step.
+
+export enum PaintTool
+    Pencil = "pencil",
+    Eraser = "eraser",
+    Line = "line",
+    Rectangle = "rectangle",
+    FilledRectangle = "filledRectangle",
+    Fill = "fill",
+    Picker = "picker"
+
+    fn title() -> string
+        return match self
+            case PaintTool.Pencil then "Pencil"
+            case PaintTool.Eraser then "Eraser"
+            case PaintTool.Line then "Line"
+            case PaintTool.Rectangle then "Rectangle"
+            case PaintTool.FilledRectangle then "Filled rectangle"
+            case PaintTool.Fill then "Fill"
+            case PaintTool.Picker then "Colour picker"
+        end
+    end
+end
+
+export class ImageSession
+    image: Image
+    width: integer
+    height: integer
+
+    tool: PaintTool
+    leftColor: integer
+    rightColor: integer
+
+    -- 0 means "fit the window"; anything else is the magnification.
+    zoom: integer
+    showGrid: boolean
+
+    local undoStack: Image[]
+    local redoStack: Image[]
+
+    -- The stroke in progress: the button that started it, where it started
+    -- and where it last was, and the image as it was before it.
+    local button: integer
+    local startX: integer
+    local startY: integer
+    local lastX: integer
+    local lastY: integer
+    local before: Image?
+
+    static local undoLimit: integer = 64
+
+    fn init(image: Image, width: integer, height: integer)
+        self.image = image
+        self.width = width
+        self.height = height
+        self.tool = PaintTool.Pencil
+        self.leftColor = 0xFF000000
+        self.rightColor = 0xFFFFFFFF
+        self.zoom = 0
+        self.showGrid = true
+        self.undoStack = {}
+        self.redoStack = {}
+        self.button = 0
+        self.startX = 0
+        self.startY = 0
+        self.lastX = 0
+        self.lastY = 0
+        self.before = nil
+    end
+
+    fn isStroking() -> boolean
+        return self.button != 0
+    end
+
+    -- --- The pointer ------------------------------------------------------------
+
+    -- A button went down on pixel (x, y). Button 1 is left, 2 right.
+    fn press(x: integer, y: integer, button: integer) -> nil
+        if self.button != 0 then
+            return
+        end
+
+        -- The picker reads instead of writing, so it never needs undoing.
+        if self.tool == PaintTool.Picker then
+            self.pick(x, y, button)
+
+            return
+        end
+
+        self.button = button
+        self.startX = x
+        self.startY = y
+        self.lastX = x
+        self.lastY = y
+        self.before = self.image.copy()
+
+        self.apply(x, y)
+    end
+
+    -- The pointer moved to (x, y) with the button still down.
+    fn drag(x: integer, y: integer) -> nil
+        if self.button == 0 or (x == self.lastX and y == self.lastY) then
+            return
+        end
+
+        self.apply(x, y)
+        self.lastX = x
+        self.lastY = y
+    end
+
+    -- The button came up. Returns whether the image changed, so the caller
+    -- knows to tell everyone else showing it.
+    fn release() -> boolean
+        if self.button == 0 then
+            return false
+        end
+
+        self.button = 0
+
+        local before = self.before
+        self.before = nil
+
+        if before == nil then
+            return false
+        end
+
+        self.pushUndo(before!)
+        self.redoStack = {}
+
+        return true
+    end
+
+    -- --- Undo ----------------------------------------------------------------------
+
+    fn canUndo() -> boolean
+        return #self.undoStack > 0
+    end
+
+    fn canRedo() -> boolean
+        return #self.redoStack > 0
+    end
+
+    fn undo() -> boolean
+        if #self.undoStack == 0 or self.button != 0 then
+            return false
+        end
+
+        local snapshot = Table.remove(self.undoStack)!
+        self.redoStack[#self.redoStack + 1] = self.image.copy()
+        self.image.replacePixels(snapshot)
+
+        return true
+    end
+
+    fn redo() -> boolean
+        if #self.redoStack == 0 or self.button != 0 then
+            return false
+        end
+
+        local snapshot = Table.remove(self.redoStack)!
+        self.pushUndo(self.image.copy())
+        self.image.replacePixels(snapshot)
+
+        return true
+    end
+
+    -- Wipe the whole image to transparent, as one undoable step.
+    fn clear() -> nil
+        self.pushUndo(self.image.copy())
+        self.redoStack = {}
+        self.image.fillRect(0, 0, self.width, self.height, 0)
+    end
+
+    -- --- Tools -----------------------------------------------------------------------
+
+    local fn color() -> integer
+        if self.tool == PaintTool.Eraser then
+            return 0
+        end
+
+        if self.button == 2 then
+            return self.rightColor
+        end
+
+        return self.leftColor
+    end
+
+    -- Paint what the current tool paints for the pointer now at (x, y).
+    local fn apply(x: integer, y: integer) -> nil
+        local color = self.color()
+        local tool = self.tool
+
+        if tool == PaintTool.Pencil or tool == PaintTool.Eraser then
+            -- A line from the last point, so a fast stroke has no gaps.
+            self.image.drawLine(self.lastX, self.lastY, x, y, color)
+        elseif tool == PaintTool.Fill then
+            -- Only on the press: dragging a bucket around would refill.
+            if x == self.startX and y == self.startY then
+                self.image.floodFill(x, y, color)
+            end
+        else
+            -- Shapes are redrawn from the snapshot on every step.
+            local before = self.before
+            if before != nil then
+                self.image.replacePixels(before!)
+            end
+
+            self.shape(tool, self.startX, self.startY, x, y, color)
+        end
+    end
+
+    local fn shape(
+        tool: PaintTool,
+        x0: integer,
+        y0: integer,
+        x1: integer,
+        y1: integer,
+        color: integer
+    ) -> nil
+        local image = self.image
+        local left = Math.min(x0, x1)
+        local top = Math.min(y0, y1)
+        local right = Math.max(x0, x1)
+        local bottom = Math.max(y0, y1)
+
+        if tool == PaintTool.Line then
+            image.drawLine(x0, y0, x1, y1, color)
+        elseif tool == PaintTool.FilledRectangle then
+            image.fillRect(left, top, right - left + 1, bottom - top + 1, color)
+        elseif tool == PaintTool.Rectangle then
+            image.drawLine(left, top, right, top, color)
+            image.drawLine(left, bottom, right, bottom, color)
+            image.drawLine(left, top, left, bottom, color)
+            image.drawLine(right, top, right, bottom, color)
+        end
+    end
+
+    -- The picker: take the colour under (x, y) into the button's slot.
+    local fn pick(x: integer, y: integer, button: integer) -> nil
+        if x < 0 or y < 0 or x >= self.width or y >= self.height then
+            return
+        end
+
+        local color = self.image.getPixel(x, y)
+
+        if button == 2 then
+            self.rightColor = color
+        else
+            self.leftColor = color
+        end
+    end
+
+    local fn pushUndo(snapshot: Image) -> nil
+        self.undoStack[#self.undoStack + 1] = snapshot
+
+        if #self.undoStack > undoLimit then
+            Table.remove(self.undoStack, 1)
+        end
+    end
+end

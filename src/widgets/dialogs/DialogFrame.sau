@@ -1,0 +1,63 @@
+from uikit import *
+from theme import Palette, Metrics, Glyphs
+from widgets.common import *
+from widgets.mdi.MdiTitleBar import *
+
+-- ============================================================================
+-- DialogFrame
+-- ============================================================================
+--
+-- The window a modal dialog sits in: the same active title bar as an editor
+-- window, a close button, a frame and a shadow. Dialogs put their content
+-- inside one of these.
+--
+--     DialogFrame(title: "Open Sprite", glyph: Glyphs.openGame, onClose: cancel) do
+--         …content…
+--     end
+
+export class DialogFrame extends View
+    title: string
+    glyph: integer
+    onClose: fn() -> nil
+    content: View?
+
+    fn init(
+        title: string,
+        glyph: integer,
+        onClose: fn() -> nil,
+        key: string? = nil,
+        content: (fn() -> nil)? = nil
+    )
+        self.super(key)
+
+        self.title = title
+        self.glyph = glyph
+        self.onClose = onClose
+        self.content = childOf(nil, content)
+    end
+
+    fn body(context: BuildContext) -> View
+        local ink = Palette.titleText
+
+        local bar = HStack(alignment: StackAlignment.Center, spacing: 4.0) do
+            Frame(width: 4.0)
+            Icon(self.glyph, Metrics.iconSize, ink)
+            Frame(width: 2.0)
+            Label(self.title, color: ink).expanded()
+            CaptionButton(Glyphs.close, ink, true, self.onClose)
+            Frame(width: 2.0)
+        end
+
+        local inner = self.content ?? Frame()
+
+        local column = VStack(alignment: StackAlignment.Fill) do
+            Surface(color: Palette.titleActive, child: bar).frame(height: Metrics.titleBarHeight)
+            inner.expanded()
+        end
+
+        return DropShadow(
+            spread: 6,
+            child: Edges.box(column.padding(1.0), Palette.windowFrame, Palette.chrome)
+        )
+    end
+end

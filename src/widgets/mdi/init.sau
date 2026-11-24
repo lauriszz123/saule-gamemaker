@@ -1,0 +1,7 @@
+-- widgets/mdi — the workspace and the child windows that float in it.
+
+export from MdiFrame import *
+export from MdiTitleBar import *
+export from ResizeGrip import *
+export from MdiWindow import *
+export from MdiArea import *

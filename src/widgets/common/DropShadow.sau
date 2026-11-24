@@ -1,0 +1,65 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+
+-- ============================================================================
+-- DropShadow
+-- ============================================================================
+--
+-- A soft shadow under a floating thing — a menu, an editor window. There is
+-- no blur in the renderer, so it is a few translucent one-pixel rings, each
+-- one further out and fainter, offset down and right.
+--
+-- Only the rings are painted, never the area under the child: the child is
+-- opaque and hides it anyway. Filling whole stacked rectangles instead cost
+-- four full-window alpha blends per window — the single most expensive thing
+-- on screen while dragging.
+
+export class DropShadow extends SingleChildView
+    spread: integer
+    color: Color?
+
+    fn init(child: View? = nil, spread: integer = 4, color: Color? = nil, key: string? = nil)
+        self.super(child, key)
+
+        self.spread = spread
+        self.color = color
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local base = self.color ?? Palette.shadow
+        local w = el.size.width
+        local h = el.size.height
+        local spread = self.spread as float
+
+        -- Light from the top-left: the shadow is the child's own rectangle
+        -- moved down and right by this much.
+        local ox = 2.0
+        local oy = 3.0
+        local left = x + ox
+        local top = y + oy
+
+        -- Where the moved rectangle sticks out past the child — a sliver
+        -- down the right and along the bottom — it is at its darkest. These
+        -- have to be painted too, or a light gap opens between the window
+        -- and its shadow.
+        Graphics.setColor(base.r, base.g, base.b, base.a * spread)
+        Graphics.rectangle("fill", x + w, top, ox, h)
+        Graphics.rectangle("fill", left, y + h, w - ox, oy)
+
+        -- Then rings outward, each fainter: ring `d` gets the darkness the
+        -- old stacked rectangles reached at that distance.
+        for i = 1, self.spread do
+            local d = i as float
+
+            Graphics.setColor(base.r, base.g, base.b, base.a * (spread - d + 1.0))
+
+            Graphics.rectangle("fill", left - d, top - d, w + d * 2.0, 1.0)
+            Graphics.rectangle("fill", left - d, top + h + d - 1.0, w + d * 2.0, 1.0)
+            Graphics.rectangle("fill", left - d, top - d + 1.0, 1.0, h + d * 2.0 - 2.0)
+            Graphics.rectangle("fill", left + w + d - 1.0, top - d + 1.0, 1.0, h + d * 2.0 - 2.0)
+        end
+
+        el.paintChildren(x, y)
+    end
+end

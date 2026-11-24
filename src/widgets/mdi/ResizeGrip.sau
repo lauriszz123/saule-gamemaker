@@ -1,0 +1,65 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+
+-- ============================================================================
+-- ResizeGrip
+-- ============================================================================
+--
+-- The ribbed corner at the bottom-right of a window. Dragging it reports how
+-- far the corner should move, by the same "the grip travels with the drag"
+-- rule the title bar uses.
+
+export class ResizeGrip extends View
+    onResize: fn(float, float) -> nil
+
+    fn init(onResize: fn(float, float) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.onResize = onResize
+    end
+
+    fn body(context: BuildContext) -> View
+        local scratch = context.data().scratch
+
+        return GestureArea(child: GripMarks(), onTapAt: fn(x: float, y: float)
+            scratch.grabX = x
+            scratch.grabY = y
+        end, onDragTo: fn(x: float, y: float)
+            local dx = x - ((scratch.grabX as float?) ?? 0.0)
+            local dy = y - ((scratch.grabY as float?) ?? 0.0)
+
+            if dx != 0.0 or dy != 0.0 then
+                self.onResize(dx, dy)
+            end
+        end).cursor("resizeall")
+    end
+end
+
+-- Three short diagonal ribs in the corner.
+export class GripMarks extends View
+    fn init(key: string? = nil)
+        self.super(key)
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.constrain(Size(14.0, 14.0))
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local right = x + el.size.width - 2.0
+        local bottom = y + el.size.height - 2.0
+
+        Graphics.setLineWidth(1.0)
+
+        for i = 1, 3 do
+            local reach = (i as float) * 4.0
+
+            Palette.bevelShadow.apply()
+            Graphics.line(right - reach, bottom, right, bottom - reach)
+
+            Palette.bevelLight.apply()
+            Graphics.line(right - reach + 1.0, bottom, right, bottom - reach + 1.0)
+        end
+    end
+end

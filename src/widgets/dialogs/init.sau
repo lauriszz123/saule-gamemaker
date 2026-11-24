@@ -1,0 +1,7 @@
+-- widgets/dialogs — modal windows over the editor: the file picker, and the
+-- frame every dialog sits in.
+
+export from FileEntry import *
+export from DialogFrame import *
+export from FileDialog import *
+export from TextDialog import *

@@ -1,0 +1,44 @@
+from uikit import Color
+
+-- ============================================================================
+-- Argb
+-- ============================================================================
+--
+-- Pixel colours travel as one packed integer, `0xAARRGGBB` — the form the
+-- image pixel calls take. These turn them into something drawable and
+-- readable.
+
+export class Argb
+    static fn alpha(argb: integer) -> integer
+        return (argb >> 24) & 0xFF
+    end
+
+    -- As a uikit colour, alpha included.
+    static fn color(argb: integer) -> Color
+        return Color(
+            (((argb >> 16) & 0xFF) as float) / 255.0,
+            (((argb >> 8) & 0xFF) as float) / 255.0,
+            ((argb & 0xFF) as float) / 255.0,
+            (Argb.alpha(argb) as float) / 255.0
+        )
+    end
+
+    -- "#RRGGBB", or "#AARRGGBB" when it isn't fully opaque.
+    static fn hex(argb: integer) -> string
+        if Argb.alpha(argb) == 0xFF then
+            return String.format("#%06X", argb & 0xFFFFFF)
+        end
+
+        return String.format("#%08X", argb & 0xFFFFFFFF)
+    end
+
+    -- Read back what `hex` writes. Six digits are opaque; eight carry their
+    -- own alpha.
+    static fn parse(digits: integer, count: integer) -> integer
+        if count <= 6 then
+            return 0xFF000000 | (digits & 0xFFFFFF)
+        end
+
+        return digits & 0xFFFFFFFF
+    end
+end

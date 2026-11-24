@@ -1,0 +1,204 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+
+-- ============================================================================
+-- ChoiceList
+-- ============================================================================
+--
+-- A boxed, scrolling list of rows to pick one from — an object's events,
+-- the keys in the Add Event dialog. Click selects; double-click activates
+-- (opens, confirms); right-click selects and hands the click's window
+-- position over for a context menu.
+--
+--     ChoiceList(items: rows, selected: current, onSelect: fn(i: integer)
+--         pick.set(i)
+--     end)
+--
+-- Rows are referred to by position; the caller keeps what they stand for.
+
+export class ChoiceItem
+    label: string
+    glyph: integer?
+    glyphColor: Color?
+
+    -- A greyed-out row: still selectable, but plainly not the main thing —
+    -- an event inherited from a parent, say.
+    muted: boolean
+
+    -- Small text after the label: "(from parent)".
+    note: string
+
+    fn init(
+        label: string,
+        glyph: integer? = nil,
+        glyphColor: Color? = nil,
+        muted: boolean = false,
+        note: string = ""
+    )
+        self.label = label
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.muted = muted
+        self.note = note
+    end
+end
+
+export class ChoiceList extends View
+    items: ChoiceItem[]
+    selected: integer
+    emptyText: string
+    onSelect: fn(integer) -> nil
+    onActivate: fn(integer) -> nil
+    onMenu: (fn(integer, float, float) -> nil)?
+
+    fn init(
+        items: ChoiceItem[] = {},
+        selected: integer = 0,
+        emptyText: string = "",
+        onSelect: fn(integer) -> nil = (index: integer) => nil,
+        onActivate: fn(integer) -> nil = (index: integer) => nil,
+        onMenu: (fn(integer, float, float) -> nil)? = nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.items = items
+        self.selected = selected
+        self.emptyText = emptyText
+        self.onSelect = onSelect
+        self.onActivate = onActivate
+        self.onMenu = onMenu
+    end
+
+    fn body(context: BuildContext) -> View
+        local inner: View = Text(
+            self.emptyText,
+            style: TextStyle(color: Palette.textDisabled, size: Metrics.fontSize),
+            align: TextAlign.Center
+        ).padding(12.0).centered()
+
+        if #self.items > 0 then
+            local rows: View[] = {}
+
+            for i = 1, #self.items do
+                local index = i
+
+                rows[#rows + 1] = ChoiceRow(
+                    item: self.items[i],
+                    selected: i == self.selected,
+                    onSelect: () => self.onSelect(index),
+                    onActivate: () => self.onActivate(index),
+                    onMenu: self.menuFor(index),
+                    key: "row" .. i
+                )
+            end
+
+            inner = ScrollView(
+                child: VStack(alignment: StackAlignment.Fill, sizing: StackSize.Fit, children: rows).padding(
+                    2.0
+                )
+            )
+        end
+
+        return Edges.box(inner, Palette.fieldBorder, Palette.field)
+    end
+
+    local fn menuFor(index: integer) -> (fn(float, float) -> nil)?
+        local menu = self.onMenu
+
+        if menu == nil then
+            return nil
+        end
+
+        return fn(x: float, y: float)
+            self.onSelect(index)
+            menu!(index, x, y)
+        end
+    end
+end
+
+-- One row: glyph, label, note.
+export class ChoiceRow extends View
+    item: ChoiceItem
+    selected: boolean
+    onSelect: fn() -> nil
+    onActivate: fn() -> nil
+    onMenu: (fn(float, float) -> nil)?
+
+    fn init(
+        item: ChoiceItem,
+        selected: boolean,
+        onSelect: fn() -> nil,
+        onActivate: fn() -> nil,
+        onMenu: (fn(float, float) -> nil)? = nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.item = item
+        self.selected = selected
+        self.onSelect = onSelect
+        self.onActivate = onActivate
+        self.onMenu = onMenu
+    end
+
+    fn body(context: BuildContext) -> View
+        local item = self.item
+        local ink = Palette.text
+        local tint = item.glyphColor ?? Palette.text
+        local fill: Color? = nil
+
+        if item.muted then
+            ink = Palette.textMuted
+            tint = tint.withAlpha(0.5)
+        end
+
+        if self.selected then
+            ink = Palette.textOnAccent
+            tint = Palette.textOnAccent
+            fill = Palette.selection
+        end
+
+        local noteInk = Palette.textMuted
+        if self.selected then
+            noteInk = Palette.textOnAccent.withAlpha(0.8)
+        end
+
+        local glyph = item.glyph
+        local row = HStack(alignment: StackAlignment.Center, spacing: 6.0) do
+            if glyph != nil then
+                Icon(glyph!, Metrics.iconSize, tint)
+            end
+
+            Label(item.label, color: ink)
+
+            if item.note != "" then
+                Label(item.note, color: noteInk, size: Metrics.smallFontSize)
+            end
+
+            Spacer()
+        end
+
+        local menu = self.onMenu
+        local element = context.element()
+
+        return GestureArea(
+            child: Surface(
+                color: fill,
+                radius: 2.0,
+                child: row.padding(insets: EdgeInsets.symmetric(horizontal: 5.0)).clipped()
+            ).frame(height: Metrics.treeRowHeight),
+            onTapDown: self.onSelect,
+            onDoubleTapAt: fn(x: float, y: float)
+                self.onActivate()
+            end,
+            onSecondaryTapAt: fn(x: float, y: float)
+                if menu != nil then
+                    local origin = absoluteOf(element)
+                    menu!(origin.dx + x, origin.dy + y)
+                end
+            end
+        )
+    end
+end

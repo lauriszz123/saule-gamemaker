@@ -1,0 +1,66 @@
+-- ============================================================================
+-- Signal
+-- ============================================================================
+--
+-- The smallest possible observer: things that change (a project, the open
+-- windows) own a `Signal`, and things that need to react to the change
+-- (the views) connect to it.
+--
+--     local id = project.changed.connect(() => redraw())
+--     project.changed.emit()
+--     project.changed.disconnect(id)
+--
+-- The model never knows who is listening, which is what keeps `core` and
+-- `editor` free of any UI code.
+
+class Listener
+    id: integer
+    callback: fn() -> nil
+
+    fn init(id: integer, callback: fn() -> nil)
+        self.id = id
+        self.callback = callback
+    end
+end
+
+export class Signal
+    local listeners: Listener[]
+    local nextId: integer
+
+    fn init()
+        self.listeners = {}
+        self.nextId = 1
+    end
+
+    -- Start listening. Keep the returned id to stop again.
+    fn connect(callback: fn() -> nil) -> integer
+        local id = self.nextId
+        self.nextId += 1
+
+        self.listeners[#self.listeners + 1] = Listener(id, callback)
+
+        return id
+    end
+
+    fn disconnect(id: integer) -> nil
+        for i = #self.listeners, 1, -1 do
+            if self.listeners[i].id == id then
+                Table.remove(self.listeners, i)
+            end
+        end
+    end
+
+    -- Tell every listener something changed. Iterates a copy, so a listener
+    -- that disconnects itself mid-emit doesn't skip its neighbour.
+    fn emit() -> nil
+        local snapshot: Listener[] = {}
+
+        for listener in self.listeners do
+            snapshot[#snapshot + 1] = listener
+        end
+
+        for listener in snapshot do
+            listener.callback()
+        end
+    end
+end

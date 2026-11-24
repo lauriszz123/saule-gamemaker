@@ -1,0 +1,428 @@
+from uikit import *
+from model import *
+from editor import *
+from theme import *
+from widgets import *
+from ResourceEditor import *
+from SpriteRegions import *
+from EventPanel import *
+from AddEventDialog import *
+
+-- ============================================================================
+-- ObjectEditor
+-- ============================================================================
+--
+-- Object Properties: the object's settings down the left, its events in the
+-- middle, and the selected event on the right.
+--
+--   ┌──────────────────────┬──────────────────┬───────────────────────────┐
+--   │ Name: [player     ]  │ Events:          │ ⏰ Alarm (ShootRate)       │
+--   │ Sprite               │ 💡 Create         │ Name: [ShootRate]         │
+--   │ ┌──┐ [spr_player ▾]  │ ⏰ Alarm (Shoot…) │ Time: [30] [Steps ▾]      │
+--   │ └──┘ [New] [Edit]    │ 🚶 Step           │ ☑ Repeat ☐ Start on create│
+--   │ ☑ Visible ☐ Solid    │ ⌨ Key Press (…)  │ Script ──────────────────  │
+--   │ ☐ Persistent         │ 🖌 Draw (parent)  │ │ shoot()               │ │
+--   │ Depth:  [0]          │                  │ └───────────────────────┘ │
+--   │ Parent: [<none>   ▾] │ [ Add Event ]    │ [ Edit Script ]           │
+--   │ Mask:   [<same>   ▾] │ [Change] [Delete]│                           │
+--   │ [Show Information]   │                  │                           │
+--   │ [        OK       ]  │                  │                           │
+--   └──────────────────────┴──────────────────┴───────────────────────────┘
+--
+-- Events the object inherits from its parent are listed too, greyed, so the
+-- list shows everything the object will actually do.
+
+export class ObjectEditor extends ResourceEditor
+    fn init(editor: Editor, resource: Resource, documentId: integer, key: string? = nil)
+        self.super(editor, resource, documentId, key)
+    end
+
+    fn sidebarWidth() -> float
+        return 240.0
+    end
+
+    fn properties(context: BuildContext) -> View[]
+        local editor = self.editor
+        local project = editor.project
+        local id = self.resource.id
+        local object = editor.object(id) ?? ObjectData()
+
+        -- Sprites, with "<no sprite>" first.
+        local sprites = project.all(ResourceKind.Sprite)
+        local spriteIds: integer[] = {0}
+        local spriteItems: DropdownItem[] = {DropdownItem("<no sprite>")}
+        local maskItems: DropdownItem[] = {DropdownItem("<same as sprite>")}
+        local accent = ResourceStyle.accent(ResourceKind.Sprite)
+
+        for sprite in sprites do
+            spriteIds[#spriteIds + 1] = sprite.id
+            spriteItems[#spriteItems + 1] = DropdownItem(sprite.name, Glyphs.sprite, accent)
+            maskItems[#maskItems + 1] = DropdownItem(sprite.name, Glyphs.sprite, accent)
+        end
+
+        -- Other objects, greyed when choosing one would make a loop.
+        local parentIds: integer[] = {0}
+        local parentItems: DropdownItem[] = {DropdownItem("<no parent>")}
+        local objectAccent = ResourceStyle.accent(ResourceKind.Object)
+
+        for other in project.all(ResourceKind.Object) do
+            if other.id != id then
+                parentIds[#parentIds + 1] = other.id
+                parentItems[#parentItems + 1] = DropdownItem(
+                    other.name,
+                    Glyphs.object,
+                    objectAccent,
+                    enabled: editor.canBeParent(id, other.id)
+                )
+            end
+        end
+
+        local spriteRow = HStack(alignment: StackAlignment.Center, spacing: 8.0) do
+            self.thumbnail(object.spriteId).frame(width: 56.0, height: 56.0)
+
+            VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+                Dropdown(items: spriteItems, selected: indexOf(spriteIds, object.spriteId)) do (
+                    index: integer
+                )
+                    editor.setObjectSprite(id, spriteIds[index])
+                end
+
+                HStack(spacing: 6.0) do
+                    PushButton(label: "New", action: () => editor.createObjectSprite(id)).expanded()
+                    PushButton(
+                        label: "Edit",
+                        action: self.onlyIf(
+                            object.spriteId != 0,
+                            () => editor.openResource(object.spriteId)
+                        )
+                    ).expanded()
+                end.frame(height: 26.0)
+            end.expanded()
+        end.frame(height: 58.0)
+
+        local flags = fn(visible: boolean, solid: boolean, persistent: boolean) -> nil
+            editor.setObjectFlags(id, visible, solid, persistent)
+        end
+
+        return {
+            self.heading("Sprite"),
+            spriteRow,
+            Rule(etched: true),
+            HStack(spacing: 12.0) do
+                Checkbox(value: object.visible, label: "Visible", onChanged: fn(on: boolean)
+                    flags(on, object.solid, object.persistent)
+                end)
+                Checkbox(value: object.solid, label: "Solid", onChanged: fn(on: boolean)
+                    flags(object.visible, on, object.persistent)
+                end)
+            end.frame(height: 22.0),
+            Checkbox(value: object.persistent, label: "Persistent", onChanged: fn(on: boolean)
+                flags(object.visible, object.solid, on)
+            end),
+            FormRow(
+                label: "Depth:",
+                labelWidth: 52.0,
+                child: NumberField(value: object.depth) do (depth: integer)
+                    editor.setObjectDepth(id, depth)
+                end
+            ),
+            FormRow(
+                label: "Parent:",
+                labelWidth: 52.0,
+                child: Dropdown(items: parentItems, selected: indexOf(parentIds, object.parentId)) do (
+                    index: integer
+                )
+                    editor.setObjectParent(id, parentIds[index])
+                end
+            ),
+            FormRow(
+                label: "Mask:",
+                labelWidth: 52.0,
+                child: Dropdown(items: maskItems, selected: indexOf(spriteIds, object.maskId)) do (
+                    index: integer
+                )
+                    editor.setObjectMask(id, spriteIds[index])
+                end
+            ),
+            Rule(etched: true),
+            PushButton(
+                label: "Show Information",
+                glyph: Glyphs.information,
+                glyphColor: Palette.info
+            ) do
+                openTextDialog(
+                    context,
+                    title: "Information about " .. self.resource.name,
+                    text: editor.objectInformation(id),
+                    glyph: Glyphs.information
+                )
+            end,
+        }
+    end
+
+    fn workArea(context: BuildContext) -> View?
+        local editor = self.editor
+        local project = editor.project
+        local id = self.resource.id
+        local object = editor.object(id) ?? ObjectData()
+
+        local entries = EventEntry.listFor(project, id, object)
+        local chosen = context.state("event", "")
+        local current = EventEntry.indexOfKey(entries, chosen.text(""))
+
+        if current == 0 and #entries > 0 then
+            current = 1
+        end
+
+        local entry: EventEntry? = nil
+        if current > 0 then
+            entry = entries[current]
+        end
+
+        local select = fn(key: string) -> nil
+            chosen.set(key)
+        end
+
+        local addEvent = fn()
+            openAddEventDialog(context, editor, id, onDone: fn(eventId: integer)
+                select(EventEntry.ownKey(eventId))
+            end)
+        end
+
+        local changeEvent = fn(event: ObjectEvent) -> nil
+            openAddEventDialog(context, editor, id, changing: event, onDone: fn(eventId: integer)
+                select(EventEntry.ownKey(eventId))
+            end)
+        end
+
+        local open = fn(target: EventEntry) -> nil
+            editor.openEventScript(target.ownerId, target.event.id)
+        end
+
+        local items: ChoiceItem[] = {}
+
+        for item in entries do
+            local note = ""
+
+            if item.isInherited() then
+                note = "(" .. project.nameOf(item.ownerId) .. ")"
+            end
+
+            items[#items + 1] = ChoiceItem(
+                project.eventTitle(item.event),
+                glyph: EventStyle.glyph(item.event.kind),
+                glyphColor: EventStyle.accent(item.event.kind),
+                muted: item.isInherited(),
+                note: note
+            )
+        end
+
+        local menu = fn(index: integer, x: float, y: float) -> nil
+            local target = entries[index]
+            local event = target.event
+            local menuEntries: MenuEntry[] = {
+                MenuEntry("Edit Script", glyph: Glyphs.script, action: () => open(target)),
+            }
+
+            if target.isInherited() then
+                menuEntries[#menuEntries + 1] = MenuEntry(
+                    "Override",
+                    glyph: Glyphs.pencil,
+                    action: fn()
+                        select(EventEntry.ownKey(editor.overrideEvent(id, event)))
+                    end
+                )
+                menuEntries[#menuEntries + 1] = MenuEntry(
+                    "Open " .. project.nameOf(target.ownerId),
+                    glyph: Glyphs.object,
+                    action: () => editor.openResource(target.ownerId)
+                )
+            else
+                menuEntries[#menuEntries + 1] = MenuEntry(
+                    "Change Event...",
+                    glyph: Glyphs.changeEvent,
+                    action: () => changeEvent(event)
+                )
+                menuEntries[#menuEntries + 1] = MenuEntry.separator()
+                menuEntries[#menuEntries + 1] = MenuEntry(
+                    "Delete Event",
+                    glyph: Icons.delete,
+                    glyphColor: Palette.debug,
+                    action: () => editor.removeObjectEvent(id, event.id)
+                )
+            end
+
+            openMenuPopup(context, x, y, menuEntries, width: 200.0)
+        end
+
+        local ownSelected = entry != nil and not entry!.isInherited()
+
+        local list = VStack(alignment: StackAlignment.Fill, spacing: 6.0) do
+            Label("Events:")
+            ChoiceList(
+                items: items,
+                selected: current,
+                emptyText: "No events yet. Add one to make the object do something.",
+                onSelect: fn(index: integer)
+                    select(entries[index].key)
+                end,
+                onActivate: fn(index: integer)
+                    open(entries[index])
+                end,
+                onMenu: menu
+            ).expanded()
+            PushButton(
+                label: "Add Event",
+                glyph: Glyphs.addEvent,
+                glyphColor: Palette.run,
+                action: addEvent
+            )
+            HStack(spacing: 6.0) do
+                PushButton(
+                    label: "Change",
+                    action: self.onlyIf(ownSelected, () => changeEvent(entry!.event))
+                ).expanded()
+                PushButton(
+                    label: "Delete",
+                    action: self.onlyIf(
+                        ownSelected,
+                        () => editor.removeObjectEvent(id, entry!.event.id)
+                    )
+                ).expanded()
+            end.frame(height: 26.0)
+        end
+
+        local panel: View = Label("Select an event to see what it does.", color: Palette.textMuted).centered()
+
+        if entry != nil then
+            panel = EventPanel(
+                editor: editor,
+                objectId: id,
+                event: entry!.event,
+                ownerId: entry!.ownerId,
+                onSelect: select,
+                key: "panel:" .. entry!.key
+            )
+        end
+
+        return HStack(alignment: StackAlignment.Fill, spacing: 10.0) do
+            list.frame(width: 210.0)
+            Rule(vertical: true, etched: true)
+            panel.expanded()
+        end
+    end
+
+    -- --- Pieces ------------------------------------------------------------------
+
+    -- The first subimage of the object's sprite, or a placeholder.
+    local fn thumbnail(spriteId: integer) -> View
+        local sprite = self.editor.sprite(spriteId)
+        local frame: SpriteFrame? = nil
+
+        if sprite != nil then
+            frame = sprite!.frame(1)
+        end
+
+        if frame == nil then
+            return Edges.box(
+                Icon(Glyphs.object, 26.0, Palette.textDisabled).centered(),
+                Palette.fieldBorder,
+                Palette.field
+            )
+        end
+
+        return Edges.box(
+            SpritePreview(frames: {regionOf(frame!)}, maxZoom: 3.0),
+            Palette.fieldBorder
+        )
+    end
+
+    local fn onlyIf(enabled: boolean, action: fn() -> nil) -> (fn() -> nil)?
+        if enabled then
+            return action
+        end
+
+        return nil
+    end
+end
+
+-- Where `id` is in `ids`, or 0.
+fn indexOf(ids: integer[], id: integer) -> integer
+    for i = 1, #ids do
+        if ids[i] == id then
+            return i
+        end
+    end
+
+    return 0
+end
+
+-- ============================================================================
+-- EventEntry
+-- ============================================================================
+--
+-- One row of the event list: an event, and the object it is defined on —
+-- this one, or a parent it is inherited from.
+
+export class EventEntry
+    event: ObjectEvent
+    ownerId: integer
+    objectId: integer
+    key: string
+
+    fn init(event: ObjectEvent, ownerId: integer, objectId: integer)
+        self.event = event
+        self.ownerId = ownerId
+        self.objectId = objectId
+
+        if ownerId == objectId then
+            self.key = EventEntry.ownKey(event.id)
+        else
+            self.key = "inherited:" .. ownerId .. ":" .. event.id
+        end
+    end
+
+    fn isInherited() -> boolean
+        return self.ownerId != self.objectId
+    end
+
+    -- What the selection remembers an own event by.
+    static fn ownKey(eventId: integer) -> string
+        return "own:" .. eventId
+    end
+
+    -- The object's own events and the ones it inherits, in one sorted list.
+    static fn listFor(project: GameProject, id: integer, object: ObjectData) -> EventEntry[]
+        local list: EventEntry[] = {}
+
+        for event in object.events do
+            list[#list + 1] = EventEntry(event, id, id)
+        end
+
+        for inherited in project.inherited(id) do
+            list[#list + 1] = EventEntry(inherited.event, inherited.ownerId, id)
+        end
+
+        Table.sort(list, (a: EventEntry, b: EventEntry) => EventEntry.before(a, b))
+
+        return list
+    end
+
+    static fn before(a: EventEntry, b: EventEntry) -> boolean
+        if a.event.isSlot(b.event.kind, b.event.detail, b.event.target) then
+            return not a.isInherited() and b.isInherited()
+        end
+
+        return a.event.before(b.event)
+    end
+
+    static fn indexOfKey(list: EventEntry[], key: string) -> integer
+        for i = 1, #list do
+            if list[i].key == key then
+                return i
+            end
+        end
+
+        return 0
+    end
+end

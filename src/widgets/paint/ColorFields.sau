@@ -1,0 +1,260 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+from widgets.preview.Checkerboard import *
+from Hsv import *
+
+-- ============================================================================
+-- Colour fields
+-- ============================================================================
+--
+-- The three draggable areas of a colour picker:
+--
+--   SaturationValueField  the square: left→right is saturation, top→bottom
+--                         is brightness, for the current hue
+--   HueBar                the rainbow strip that picks the hue
+--   AlphaBar              how see-through, over a checkerboard
+--
+-- Each one reports a new value while the button is held, from the press
+-- onward, clamped to its range — so dragging past the edge pins the value at
+-- the end instead of losing the drag.
+
+-- The shared drag: press inside to start, and every move until release
+-- reports the pointer, in the view's own coordinates.
+class DragTracker
+    static fn handle(
+        el: Element,
+        event: PointerEvent,
+        x: float,
+        y: float,
+        inside: boolean,
+        report: fn(float, float) -> nil
+    ) -> boolean
+        local scratch = el.data.scratch
+
+        if event.kind == PointerKind.Down and inside and event.isPrimary() then
+            scratch.dragging = true
+            report(x, y)
+
+            return true
+        end
+
+        if event.kind == PointerKind.Move and scratch.dragging == true then
+            report(x, y)
+
+            return false
+        end
+
+        if event.kind == PointerKind.Up then
+            scratch.dragging = false
+        end
+
+        return false
+    end
+end
+
+local fn unit(value: float) -> float
+    return Math.clamp(value, 0.0, 1.0)
+end
+
+-- A ring, dark inside light, so the marker shows on any colour.
+local fn marker(x: float, y: float) -> nil
+    Graphics.setLineWidth(1.5)
+    Color.rgba(0, 0, 0, 0.8).apply()
+    Graphics.circle("line", x, y, 5.5)
+    Color.rgba(255, 255, 255, 0.95).apply()
+    Graphics.circle("line", x, y, 4.0)
+end
+
+export class SaturationValueField extends View
+    hue: float
+    saturation: float
+    value: float
+    onChange: fn(float, float) -> nil
+
+    fn init(
+        hue: float,
+        saturation: float,
+        value: float,
+        onChange: fn(float, float) -> nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.hue = hue
+        self.saturation = saturation
+        self.value = value
+        self.onChange = onChange
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+        local r: float, g: float, b: float = Hsv.pureHue(self.hue)
+
+        -- White to the pure hue across, then clear to black down over it.
+        Graphics.setLinearGradient(x, y, x + w, y, {0.0, 1.0, 1.0, 1.0, 1.0, 1.0, r, g, b, 1.0})
+        Graphics.rectangle("fill", x, y, w, h)
+        Graphics.setLinearGradient(
+            x,
+            y,
+            x,
+            y + h,
+            {0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}
+        )
+        Graphics.rectangle("fill", x, y, w, h)
+        Graphics.clearGradient()
+
+        Palette.windowFrame.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + 0.5, y + 0.5, w - 1.0, h - 1.0)
+
+        Graphics.push("all")
+        Graphics.intersectScissor(x, y, w, h)
+        marker(x + self.saturation * w, y + (1.0 - self.value) * h)
+        Graphics.pop()
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        return DragTracker.handle(el, event, x, y, inside, fn(px: float, py: float)
+            self.onChange(unit(px / el.size.width), 1.0 - unit(py / el.size.height))
+        end)
+    end
+end
+
+export class HueBar extends View
+    hue: float
+    onChange: fn(float) -> nil
+
+    fn init(hue: float, onChange: fn(float) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.hue = hue
+        self.onChange = onChange
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+
+        -- Red, yellow, green, cyan, blue, magenta, and back to red.
+        Graphics.setLinearGradient(
+            x,
+            y,
+            x,
+            y + h,
+            {
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0 / 6.0,
+                1.0,
+                1.0,
+                0.0,
+                1.0,
+                2.0 / 6.0,
+                0.0,
+                1.0,
+                0.0,
+                1.0,
+                3.0 / 6.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                4.0 / 6.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                5.0 / 6.0,
+                1.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.0,
+                0.0,
+                1.0,
+            }
+        )
+        Graphics.rectangle("fill", x, y, w, h)
+        Graphics.clearGradient()
+
+        Palette.windowFrame.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + 0.5, y + 0.5, w - 1.0, h - 1.0)
+
+        -- An arrow-ish bar across at the current hue.
+        local at = y + self.hue * h
+        Color.rgba(0, 0, 0, 0.85).apply()
+        Graphics.rectangle("fill", x - 3.0, at - 2.0, w + 6.0, 4.0)
+        Color.rgba(255, 255, 255, 1.0).apply()
+        Graphics.rectangle("fill", x - 2.0, at - 1.0, w + 4.0, 2.0)
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        return DragTracker.handle(el, event, x, y, inside, fn(px: float, py: float)
+            self.onChange(unit(py / el.size.height))
+        end)
+    end
+end
+
+export class AlphaBar extends View
+    -- The colour being made, without its alpha.
+    opaque: integer
+    alpha: float
+    onChange: fn(float) -> nil
+
+    fn init(opaque: integer, alpha: float, onChange: fn(float) -> nil, key: string? = nil)
+        self.super(key)
+
+        self.opaque = opaque
+        self.alpha = alpha
+        self.onChange = onChange
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+        local r = (((self.opaque >> 16) & 0xFF) as float) / 255.0
+        local g = (((self.opaque >> 8) & 0xFF) as float) / 255.0
+        local b = ((self.opaque & 0xFF) as float) / 255.0
+
+        Checkerboard.fill(x, y, w, h, 5.0)
+        Graphics.setLinearGradient(x, y, x + w, y, {0.0, r, g, b, 0.0, 1.0, r, g, b, 1.0})
+        Graphics.rectangle("fill", x, y, w, h)
+        Graphics.clearGradient()
+
+        Palette.windowFrame.apply()
+        Graphics.setLineWidth(1.0)
+        Graphics.rectangle("line", x + 0.5, y + 0.5, w - 1.0, h - 1.0)
+
+        local at = x + self.alpha * w
+        Color.rgba(0, 0, 0, 0.85).apply()
+        Graphics.rectangle("fill", at - 2.0, y - 3.0, 4.0, h + 6.0)
+        Color.rgba(255, 255, 255, 1.0).apply()
+        Graphics.rectangle("fill", at - 1.0, y - 2.0, 2.0, h + 4.0)
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        return DragTracker.handle(el, event, x, y, inside, fn(px: float, py: float)
+            self.onChange(unit(px / el.size.width))
+        end)
+    end
+end

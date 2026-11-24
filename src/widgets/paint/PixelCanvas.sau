@@ -1,0 +1,254 @@
+from shine import Graphics
+from uikit import *
+from theme import Palette
+from widgets.preview.Checkerboard import *
+from widgets.preview.ImageRegion import *
+
+-- ============================================================================
+-- PixelCanvas
+-- ============================================================================
+--
+-- An image blown up so its pixels can be painted one at a time: crisp
+-- magnified pixels over a transparency checkerboard, a pixel grid once the
+-- pixels are big enough to want one, and the pixel under the pointer
+-- outlined.
+--
+--     PixelCanvas(
+--         region: ImageRegion.whole(image, 32, 32),
+--         zoom: 0,                          -- 0 fits the space
+--         cursor: cursor,                   -- where the pointer is, for a readout
+--         onPress: fn(x, y, button) … end,  -- in image pixels; 1 left, 2 right
+--         onDrag: fn(x, y) … end,
+--         onRelease: fn() … end,
+--         onZoom: fn(step) … end            -- the wheel: +1 in, -1 out
+--     )
+--
+-- It paints straight from the image every frame, so a stroke shows the
+-- moment the pixels change — nothing has to rebuild. Pointer positions are
+-- reported even off the edge of the image, so a line or a rectangle can be
+-- dragged past it.
+
+export class PixelCursor
+    x: integer
+    y: integer
+    inside: boolean
+
+    -- The magnification actually on screen — what "fit" worked out to.
+    zoom: integer
+
+    fn init()
+        self.x = 0
+        self.y = 0
+        self.inside = false
+        self.zoom = 1
+    end
+end
+
+export class PixelCanvas extends View
+    region: ImageRegion
+    zoom: integer
+    showGrid: boolean
+    cursor: PixelCursor
+    onPress: fn(integer, integer, integer) -> nil
+    onDrag: fn(integer, integer) -> nil
+    onRelease: fn() -> nil
+    onZoom: fn(integer) -> nil
+
+    fn init(
+        region: ImageRegion,
+        cursor: PixelCursor,
+        zoom: integer = 0,
+        showGrid: boolean = true,
+        onPress: fn(integer, integer, integer) -> nil = (x: integer, y: integer, b: integer) => nil,
+        onDrag: fn(integer, integer) -> nil = (x: integer, y: integer) => nil,
+        onRelease: fn() -> nil = () => nil,
+        onZoom: fn(integer) -> nil = (step: integer) => nil,
+        key: string? = nil
+    )
+        self.super(key)
+
+        self.region = region
+        self.cursor = cursor
+        self.zoom = zoom
+        self.showGrid = showGrid
+        self.onPress = onPress
+        self.onDrag = onDrag
+        self.onRelease = onRelease
+        self.onZoom = onZoom
+    end
+
+    fn layout(el: Element, constraints: Constraints) -> Size
+        return constraints.biggest()
+    end
+
+    -- The magnification to draw at: the one asked for, or the largest whole
+    -- step that fits with a margin.
+    local fn effectiveZoom(el: Element) -> integer
+        if self.zoom > 0 then
+            return self.zoom
+        end
+
+        local fitW = (el.size.width - 32.0) / (self.region.width as float)
+        local fitH = (el.size.height - 32.0) / (self.region.height as float)
+        local fit = Math.floor(Math.min(fitW, fitH)) ?? 1
+
+        return Math.clamp(fit, 1, 32)
+    end
+
+    -- Top-left of the image inside the view, in view coordinates.
+    local fn origin(el: Element, zoom: integer) -> (float, float)
+        local drawnW = (self.region.width * zoom) as float
+        local drawnH = (self.region.height * zoom) as float
+
+        return (Math.floor((el.size.width - drawnW) / 2.0) ?? 0) as float, (Math.floor(
+            (el.size.height - drawnH) / 2.0
+        ) ?? 0) as float
+    end
+
+    fn paint(el: Element, x: float, y: float) -> nil
+        local w = el.size.width
+        local h = el.size.height
+        local zoom = self.effectiveZoom(el)
+        local left: float, top: float = self.origin(el, zoom)
+        local scale = zoom as float
+        local drawnW = (self.region.width as float) * scale
+        local drawnH = (self.region.height as float) * scale
+
+        self.cursor.zoom = zoom
+
+        Graphics.push("all")
+        Graphics.intersectScissor(x, y, w, h)
+
+        Palette.chromeDark.apply()
+        Graphics.rectangle("fill", x, y, w, h)
+
+        local ix = x + left
+        local iy = y + top
+
+        Checkerboard.fill(ix, iy, drawnW, drawnH, 8.0)
+
+        local r = self.region
+        local cell = Graphics.newQuad(
+            r.x as float,
+            r.y as float,
+            r.width as float,
+            r.height as float,
+            r.pictureWidth as float,
+            r.pictureHeight as float
+        )
+
+        Graphics.setDefaultFilter("nearest")
+        Graphics.setColor(1.0, 1.0, 1.0, 1.0)
+        Graphics.drawq(r.picture, cell, ix, iy, 0.0, scale, scale)
+        Graphics.setDefaultFilter("linear")
+
+        if self.showGrid and zoom >= 6 then
+            self.paintGrid(ix, iy, scale, drawnW, drawnH)
+        end
+
+        Palette.windowFrame.apply()
+        Graphics.rectangle("fill", ix - 1.0, iy - 1.0, drawnW + 2.0, 1.0)
+        Graphics.rectangle("fill", ix - 1.0, iy + drawnH, drawnW + 2.0, 1.0)
+        Graphics.rectangle("fill", ix - 1.0, iy, 1.0, drawnH)
+        Graphics.rectangle("fill", ix + drawnW, iy, 1.0, drawnH)
+
+        -- The pixel under the pointer: a dark and a light outline, so it shows
+        -- on any colour.
+        local c = self.cursor
+        if c.inside and c.x >= 0 and c.y >= 0 and c.x < r.width and c.y < r.height then
+            local px = ix + (c.x as float) * scale
+            local py = iy + (c.y as float) * scale
+
+            Graphics.setLineWidth(1.0)
+            Color.rgba(0, 0, 0, 0.75).apply()
+            Graphics.rectangle("line", px + 0.5, py + 0.5, scale - 1.0, scale - 1.0)
+            Color.rgba(255, 255, 255, 0.85).apply()
+            Graphics.rectangle("line", px - 0.5, py - 0.5, scale + 1.0, scale + 1.0)
+        end
+
+        Graphics.pop()
+    end
+
+    local fn paintGrid(ix: float, iy: float, scale: float, drawnW: float, drawnH: float) -> nil
+        Color.rgba(0, 0, 0, 0.10).apply()
+
+        for col = 1, self.region.width - 1 do
+            Graphics.rectangle("fill", ix + (col as float) * scale, iy, 1.0, drawnH)
+        end
+
+        for row = 1, self.region.height - 1 do
+            Graphics.rectangle("fill", ix, iy + (row as float) * scale, drawnW, 1.0)
+        end
+    end
+
+    -- The image pixel under view position (x, y).
+    local fn pixelAt(el: Element, x: float, y: float) -> (integer, integer)
+        local zoom = self.effectiveZoom(el)
+        local left: float, top: float = self.origin(el, zoom)
+
+        return Math.floor((x - left) / (zoom as float)) ?? 0, Math.floor(
+            (y - top) / (zoom as float)
+        ) ?? 0
+    end
+
+    fn handleEvent(el: Element, event: PointerEvent, x: float, y: float, inside: boolean) -> boolean
+        local scratch = el.data.scratch
+        local held = (scratch.button as integer?) ?? 0
+
+        if event.kind == PointerKind.Move then
+            local px: integer, py: integer = self.pixelAt(el, x, y)
+            local c = self.cursor
+            local changed = c.x != px or c.y != py or c.inside != inside
+
+            c.x = px
+            c.y = py
+            c.inside = inside
+
+            if changed then
+                Repaint.request()
+
+                if held != 0 then
+                    self.onDrag(px, py)
+                end
+            end
+
+            return false
+        end
+
+        if event.kind == PointerKind.Down then
+            if not inside or held != 0 or (event.button != 1 and event.button != 2) then
+                return false
+            end
+
+            local px: integer, py: integer = self.pixelAt(el, x, y)
+
+            scratch.button = event.button
+            self.onPress(px, py, event.button)
+            Repaint.request()
+
+            return true
+        end
+
+        if event.kind == PointerKind.Up then
+            if held != 0 and event.button == held then
+                scratch.button = 0
+                self.onRelease()
+                Repaint.request()
+            end
+
+            return false
+        end
+
+        if event.kind == PointerKind.Scroll and inside then
+            if event.scrollY > 0.0 then
+                self.onZoom(1)
+            elseif event.scrollY < 0.0 then
+                self.onZoom(-1)
+            end
+
+            return true
+        end
+
+        return false
+    end
+end

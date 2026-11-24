@@ -1,0 +1,66 @@
+from Shortcut import *
+
+-- ============================================================================
+-- Command
+-- ============================================================================
+--
+-- Something the user can ask the editor to do — "Create Sprite", "Save",
+-- "Cascade". A command is defined once, and the menu bar, the tool strip,
+-- right-click menus and keyboard shortcuts all trigger the *same* object.
+-- That is what keeps "the menu says Ctrl+S" and "Ctrl+S saves" from drifting
+-- apart.
+--
+--     Command("Save", Shortcut("s", ctrl: true)) do
+--         editor.save()
+--     end
+--
+-- A command with no action isn't built yet; it shows greyed out everywhere.
+-- `enabledWhen` can disable one that only makes sense sometimes, like "Delete" with
+-- nothing selected.
+
+export class Command
+    label: string
+    shortcut: Shortcut?
+
+    local condition: (fn() -> boolean)?
+    local action: (fn() -> nil)?
+
+    fn init(
+        label: string,
+        shortcut: Shortcut? = nil,
+        enabledWhen: (fn() -> boolean)? = nil,
+        action: (fn() -> nil)? = nil
+    )
+        self.label = label
+        self.shortcut = shortcut
+        self.condition = enabledWhen
+        self.action = action
+    end
+
+    fn isEnabled() -> boolean
+        if self.action == nil then
+            return false
+        end
+
+        local condition = self.condition
+
+        if condition == nil then
+            return true
+        end
+
+        return condition!()
+    end
+
+    -- Run it, if it can run right now.
+    fn run() -> nil
+        if not self.isEnabled() then
+            return
+        end
+
+        self.action!()
+    end
+
+    fn shortcutLabel() -> string
+        return self.shortcut?.label() ?? ""
+    end
+end

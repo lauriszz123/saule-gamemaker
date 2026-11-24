@@ -1,0 +1,102 @@
+-- ============================================================================
+-- Hsv
+-- ============================================================================
+--
+-- A colour as hue, saturation and value (plus alpha), all `0.0..1.0` — the
+-- shape a colour picker works in: hue is the position on the rainbow strip,
+-- saturation and value the position in the square beside it. Converts to and
+-- from packed `0xAARRGGBB`.
+
+export class Hsv
+    h: float
+    s: float
+    v: float
+    a: float
+
+    fn init(h: float = 0.0, s: float = 0.0, v: float = 0.0, a: float = 1.0)
+        self.h = h
+        self.s = s
+        self.v = v
+        self.a = a
+    end
+
+    static fn fromArgb(argb: integer) -> Hsv
+        local r = (((argb >> 16) & 0xFF) as float) / 255.0
+        local g = (((argb >> 8) & 0xFF) as float) / 255.0
+        local b = ((argb & 0xFF) as float) / 255.0
+        local a = (((argb >> 24) & 0xFF) as float) / 255.0
+
+        local high = Math.max(r, g, b)
+        local low = Math.min(r, g, b)
+        local span = high - low
+        local h = 0.0
+
+        if span > 0.0 then
+            if high == r then
+                h = (g - b) / span
+            elseif high == g then
+                h = (b - r) / span + 2.0
+            else
+                h = (r - g) / span + 4.0
+            end
+
+            h = h / 6.0
+            if h < 0.0 then
+                h += 1.0
+            end
+        end
+
+        local s = 0.0
+        if high > 0.0 then
+            s = span / high
+        end
+
+        return Hsv(h, s, high, a)
+    end
+
+    fn toArgb() -> integer
+        local r: float, g: float, b: float = Hsv.rgb(self.h, self.s, self.v)
+
+        return (Hsv.byte(self.a) << 24) | (Hsv.byte(r) << 16) | (Hsv.byte(g) << 8) | Hsv.byte(b)
+    end
+
+    -- The same colour fully opaque.
+    fn opaque() -> integer
+        return self.toArgb() | 0xFF000000
+    end
+
+    -- The fully saturated, fully bright colour of a hue — the top-right
+    -- corner of the square.
+    static fn pureHue(h: float) -> (float, float, float)
+        return Hsv.rgb(h, 1.0, 1.0)
+    end
+
+    static fn rgb(h: float, s: float, v: float) -> (float, float, float)
+        local sector = (h - ((Math.floor(h) ?? 0) as float)) * 6.0
+        local i = Math.floor(sector) ?? 0
+        local f = sector - (i as float)
+        local p = v * (1.0 - s)
+        local q = v * (1.0 - s * f)
+        local t = v * (1.0 - s * (1.0 - f))
+
+        local k = i % 6
+
+        if k == 0 then
+            return v, t, p
+        elseif k == 1 then
+            return q, v, p
+        elseif k == 2 then
+            return p, v, t
+        elseif k == 3 then
+            return p, q, v
+        elseif k == 4 then
+            return t, p, v
+        end
+
+        return v, p, q
+    end
+
+    static fn byte(x: float) -> integer
+        return Math.clamp(Math.floor(x * 255.0 + 0.5) ?? 0, 0, 255)
+    end
+end

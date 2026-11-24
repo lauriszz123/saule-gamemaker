@@ -1,0 +1,100 @@
+from uikit import *
+from theme import Palette, Metrics
+from widgets.common import *
+
+-- ============================================================================
+-- PushButton
+-- ============================================================================
+--
+-- A plain desktop button: a label, optionally a glyph before it, a light
+-- face that tints on hover and darkens while held. With no action it is
+-- drawn greyed out.
+--
+--     PushButton(label: "Load Sprite", glyph: Glyphs.openGame) do … end
+
+export class PushButton extends View
+    label: string
+    glyph: integer?
+    glyphColor: Color?
+    width: float?
+    action: (fn() -> nil)?
+
+    fn init(
+        label: string = "",
+        glyph: integer? = nil,
+        glyphColor: Color? = nil,
+        width: float? = nil,
+        key: string? = nil,
+        action: (fn() -> nil)? = nil
+    )
+        self.super(key)
+
+        self.label = label
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.width = width
+        self.action = action
+    end
+
+    fn body(context: BuildContext) -> View
+        local data = context.data()
+        local enabled = self.action != nil
+
+        local fill = Palette.chromeDark
+        local edge = Palette.fieldBorder
+        local ink = Palette.text
+
+        if not enabled then
+            ink = Palette.textDisabled
+            edge = Palette.chromeEdge
+        elseif data.pressed then
+            fill = Palette.pressed
+            edge = Palette.pressedBorder
+        elseif data.hovered then
+            fill = Palette.hover
+            edge = Palette.selection
+        end
+
+        local glyph = self.glyph
+        local glyphTint = self.glyphColor ?? ink
+        if not enabled then
+            glyphTint = Palette.textDisabled
+        end
+
+        local content = HStack(
+            alignment: StackAlignment.Center,
+            sizing: StackSize.Fit,
+            spacing: 6.0
+        ) do
+            if glyph != nil then
+                Icon(glyph!, Metrics.iconSize, glyphTint)
+            end
+
+            Label(self.label, color: ink)
+        end
+
+        local face = Surface(
+            color: fill,
+            border: edge,
+            radius: 3.0,
+            child: content.centered().padding(insets: EdgeInsets.symmetric(horizontal: 12.0))
+        ).frame(width: self.width, height: 26.0)
+
+        return GestureArea(child: face, onHover: fn(inside: boolean)
+            data.hovered = inside
+            context.markNeedsBuild()
+        end, onTapDown: fn()
+            data.pressed = true
+            context.markNeedsBuild()
+        end, onTapUp: fn()
+            data.pressed = false
+            context.markNeedsBuild()
+        end, onTap: fn()
+            local action = self.action
+
+            if action != nil then
+                action!()
+            end
+        end)
+    end
+end

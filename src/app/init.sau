@@ -1,0 +1,4 @@
+-- app — the application itself: its window and its name.
+
+export from AppInfo import *
+export from EditorApp import *

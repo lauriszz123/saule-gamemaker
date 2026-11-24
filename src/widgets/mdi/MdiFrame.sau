@@ -1,0 +1,57 @@
+from uikit import Color, View, claimed
+
+-- ============================================================================
+-- MdiFrame
+-- ============================================================================
+--
+-- Everything an `MdiArea` needs to draw one child window: where it is, what
+-- its title says, what state it is in, and what goes inside it.
+--
+-- It is a description, rebuilt from the editor's documents every frame, not
+-- the window itself — the area turns frames into `MdiWindow` views.
+
+export class MdiFrame
+    id: string
+    title: string
+    glyph: integer
+    glyphColor: Color?
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    active: boolean
+    maximized: boolean
+    minimized: boolean
+
+    content: View?
+
+    fn init(
+        id: string,
+        title: string,
+        glyph: integer,
+        glyphColor: Color? = nil,
+        x: float = 0.0,
+        y: float = 0.0,
+        width: float = 400.0,
+        height: float = 300.0,
+        active: boolean = false,
+        maximized: boolean = false,
+        minimized: boolean = false,
+        content: View? = nil
+    )
+        self.id = id
+        self.title = title
+        self.glyph = glyph
+        self.glyphColor = glyphColor
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.active = active
+        self.maximized = maximized
+        self.minimized = minimized
+        self.content = claimed(content)
+    end
+end

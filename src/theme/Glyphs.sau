@@ -1,0 +1,90 @@
+-- ============================================================================
+-- Glyphs
+-- ============================================================================
+--
+-- Material Icons codepoints the editor uses, by what they mean *here*.
+-- uikit's `Icons` names the common ones; these are the rest, looked up in the
+-- Material Icons codepoint list. The font lives in `assets/fonts/`.
+
+export class Glyphs
+    -- --- Resource kinds -----------------------------------------------------
+
+    static sprite: integer = 0xE3F4  -- image
+    static sound: integer = 0xE405  -- music_note
+    static background: integer = 0xE3F7  -- landscape
+    static path: integer = 0xE922  -- timeline
+    static script: integer = 0xE86F  -- code
+    static font: integer = 0xE167  -- font_download
+    static timeLine: integer = 0xE8B5  -- schedule
+    static object: integer = 0xE574  -- category
+    static room: integer = 0xE3EC  -- grid_on
+
+    -- --- Tree ---------------------------------------------------------------
+
+    static folder: integer = 0xE2C7  -- folder
+    static folderOpen: integer = 0xE2C8  -- folder_open
+    static expand: integer = 0xE5DF  -- arrow_right
+    static collapse: integer = 0xE5C5  -- arrow_drop_down
+    static gameInfo: integer = 0xE873  -- description
+    static gameSettings: integer = 0xE8B8  -- settings
+    static extensions: integer = 0xE87B  -- extension
+
+    -- --- Tool strip ---------------------------------------------------------
+
+    static newGame: integer = 0xE89C  -- note_add
+    static openGame: integer = 0xE2C8  -- folder_open
+    static saveGame: integer = 0xE161  -- save
+    static createExecutable: integer = 0xE869  -- build
+    static publish: integer = 0xE2C3  -- cloud_upload
+    static run: integer = 0xE037  -- play_arrow
+    static debug: integer = 0xE868  -- bug_report
+    static help: integer = 0xE887  -- help
+
+    -- --- Window buttons -----------------------------------------------------
+
+    static minimize: integer = 0xE15B  -- remove
+    static maximize: integer = 0xE3C6  -- crop_square
+    static restore: integer = 0xE3E0  -- filter_none
+    static close: integer = 0xE5CD  -- close
+
+    -- --- Menus --------------------------------------------------------------
+
+    static check: integer = 0xE5CA  -- check
+    static submenu: integer = 0xE5CC  -- chevron_right
+
+    -- --- Image editor -------------------------------------------------------
+
+    static pencil: integer = 0xE3C9  -- edit
+    static eraser: integer = 0xE23B  -- format_color_reset
+    static line: integer = 0xF108  -- horizontal_rule
+    static rectangle: integer = 0xE3C6  -- crop_square
+    static filledRectangle: integer = 0xE047  -- stop
+    static fill: integer = 0xE23A  -- format_color_fill
+    static picker: integer = 0xE3B8  -- colorize
+    static zoomIn: integer = 0xE8FF  -- zoom_in
+    static zoomOut: integer = 0xE900  -- zoom_out
+    static zoomFit: integer = 0xE56B  -- zoom_out_map
+    static grid: integer = 0xE3EC  -- grid_on
+    static swap: integer = 0xE8D4  -- swap_horiz
+    static clearImage: integer = 0xE16C  -- delete_sweep
+    static palette: integer = 0xE40A  -- palette
+
+    -- --- Object events ------------------------------------------------------
+
+    static eventCreate: integer = 0xE0F0  -- lightbulb_outline
+    static eventDestroy: integer = 0xE92B  -- delete_forever
+    static eventAlarm: integer = 0xE855  -- alarm
+    static eventStep: integer = 0xE536  -- directions_walk
+    static eventCollision: integer = 0xE3E7  -- flare
+    static eventKeyboard: integer = 0xE312  -- keyboard
+    static eventKeyPress: integer = 0xE313  -- keyboard_arrow_down
+    static eventKeyRelease: integer = 0xE316  -- keyboard_arrow_up
+    static eventMouse: integer = 0xE323  -- mouse
+    static eventOther: integer = 0xE5D3  -- more_horiz
+    static eventUser: integer = 0xE7FD  -- person
+    static eventDraw: integer = 0xE3AE  -- brush
+    static addEvent: integer = 0xE146  -- add_box
+    static changeEvent: integer = 0xE8D4  -- swap_horiz
+    static information: integer = 0xE88E  -- info
+    static inherited: integer = 0xE5D8  -- arrow_upward
+end

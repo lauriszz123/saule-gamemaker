@@ -1,0 +1,28 @@
+-- widgets — reusable interface components.
+--
+-- Nothing in here knows what a sprite or a room is. Each widget takes plain
+-- data and callbacks, draws itself in the editor's look (see `theme`), and
+-- reports what the user did. The editor-specific screens in `views` are
+-- assembled out of these.
+--
+--     common     Label, Rule, Edges, DropShadow, PressWatcher
+--     menu       MenuBar, Menu, MenuEntry, openMenuPopup
+--     toolstrip  ToolStrip, ToolButton, ToolSeparator
+--     tree       TreeView, TreeNode
+--     split      SplitPane
+--     mdi        MdiArea, MdiWindow, MdiFrame
+--     form       Field, NumberField, TextArea, PushButton, ListBox, FormRow
+--     preview    SpritePreview, ImageRegion, Checkerboard, GridCanvas
+--     dialogs    openFileDialog, DialogFrame
+--     paint      PixelCanvas, Swatch, ColorPair, PixelReadout, Argb
+
+export from common import *
+export from menu import *
+export from toolstrip import *
+export from tree import *
+export from split import *
+export from mdi import *
+export from form import *
+export from preview import *
+export from dialogs import *
+export from paint import *

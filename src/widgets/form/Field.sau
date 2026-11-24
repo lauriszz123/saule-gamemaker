@@ -1,0 +1,53 @@
+from uikit import *
+from theme import Palette, Metrics
+
+-- ============================================================================
+-- Field
+-- ============================================================================
+--
+-- A single-line text box in the editor's look. A thin wrapper over uikit's
+-- `TextField`, which defaults to the kit's dark palette — every argument that
+-- decides a colour is filled in from `Palette` here, once.
+--
+--     Field(value: resource.name) do (text: string)
+--         editor.renameResource(resource.id, text)
+--     end
+
+export class Field extends View
+    value: string?
+    placeholder: string
+    width: float?
+    onChanged: (fn(string) -> nil)?
+
+    fn init(
+        value: string? = nil,
+        placeholder: string = "",
+        width: float? = nil,
+        key: string? = nil,
+        onChanged: (fn(string) -> nil)? = nil
+    )
+        self.super(key)
+
+        self.value = value
+        self.placeholder = placeholder
+        self.width = width
+        self.onChanged = onChanged
+    end
+
+    fn body(context: BuildContext) -> View
+        return TextField(
+            value: self.value,
+            placeholder: self.placeholder,
+            onChanged: self.onChanged,
+            style: TextStyle(color: Palette.text, size: Metrics.fontSize),
+            placeholderStyle: TextStyle(color: Palette.textDisabled, size: Metrics.fontSize),
+            background: Palette.field,
+            border: Palette.fieldBorder,
+            focusBorder: Palette.selection,
+            selectionColor: Palette.selection.withAlpha(0.30),
+            padding: EdgeInsets.symmetric(horizontal: 6.0, vertical: 4.0),
+            radius: 2.0,
+            width: self.width
+        )
+    end
+end

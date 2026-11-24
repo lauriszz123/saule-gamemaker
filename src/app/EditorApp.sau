@@ -1,0 +1,36 @@
+from uikit import *
+from editor import Editor
+from theme import Palette
+from views import MainWindow
+from AppInfo import *
+
+-- ============================================================================
+-- EditorApp
+-- ============================================================================
+--
+-- The application: one window, themed, with the main editor screen in it.
+-- The `Editor` — the session everything else works on — is created here.
+
+export class EditorApp extends App
+    local editor: Editor
+
+    fn init()
+        self.super()
+
+        self.editor = Editor()
+        IconFont.setFontPath(AppInfo.iconFont)
+    end
+
+    fn body() -> Scene
+        return WindowGroup(
+            title: AppInfo.name,
+            width: 1280,
+            height: 800,
+            background: Palette.chrome
+        ) do
+            Theme(data: Palette.themeData()) do
+                MainWindow(self.editor)
+            end
+        end
+    end
+end

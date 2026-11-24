@@ -1,0 +1,40 @@
+from shine import Image
+
+-- ============================================================================
+-- SpriteFrame
+-- ============================================================================
+--
+-- One subimage of a sprite, with pixels of its own. Loading a strip
+-- (`coin_strip8.png`) cuts it into eight frames, each its own image, so any
+-- one of them can be painted on without touching the others.
+
+export class SpriteFrame
+    -- Unique within its sprite, given when the frame is added to one. Lets
+    -- an open image editor keep hold of *its* frame while the others are
+    -- reordered or deleted around it. 0 until added.
+    id: integer
+
+    -- The pixels. Edited in place by the image editor.
+    image: Image
+
+    width: integer
+    height: integer
+
+    -- The file the pixels were first loaded from, or "" for a frame that was
+    -- drawn from scratch. Only a note of where it came from: the frame no
+    -- longer depends on the file.
+    source: string
+
+    fn init(image: Image, width: integer, height: integer, source: string = "")
+        self.id = 0
+        self.image = image
+        self.width = width
+        self.height = height
+        self.source = source
+    end
+
+    -- An independent copy, pixels included.
+    fn copy() -> SpriteFrame
+        return SpriteFrame(self.image.copy(), self.width, self.height, self.source)
+    end
+end
