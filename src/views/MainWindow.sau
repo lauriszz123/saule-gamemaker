@@ -51,7 +51,9 @@ class MainWindowState extends State
         self.super()
 
         self.editor = editor
-        self.commands = Commands(editor, () => Window.close())
+        -- Not `Window.close()`: that pulls the window out from under the
+        -- rest of the frame, and the layout after it fails with "no window".
+        self.commands = Commands(editor, () => App.quit())
         self.listener = 0
     end
 
